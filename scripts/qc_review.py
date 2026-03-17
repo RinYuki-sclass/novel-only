@@ -57,13 +57,21 @@ def run_qc():
     glossary_path = 'glossary/glossary.md'
     notes_path = 'glossary/personal_notes.md'
     
-    if not os.path.exists(vi_path) or not os.path.exists(kor_path):
-        print(f"[ERROR] Thieu file dau vao trong 'input/qc/'")
-        print("Vui long copy ban dich can QC vao 'input/qc/vi_to_qc.txt' va ban goc vao 'input/qc/kor.txt'")
+    if not os.path.exists(vi_path):
+        print(f"[ERROR] Thieu file ban dich 'input/qc/vi_to_qc.txt'")
         return
 
-    with open(vi_path, 'r', encoding='utf-8') as f: vi_text = f.read()
-    with open(kor_path, 'r', encoding='utf-8') as f: kor_text = f.read()
+    if not os.path.exists(kor_path) and not os.path.exists(eng_path):
+        print(f"[ERROR] Thieu file nguon (kor.txt hoac eng.txt) trong 'input/qc/'")
+        return
+
+    vi_text = ""
+    if os.path.exists(vi_path):
+        with open(vi_path, 'r', encoding='utf-8') as f: vi_text = f.read()
+    
+    kor_text = ""
+    if os.path.exists(kor_path):
+        with open(kor_path, 'r', encoding='utf-8') as f: kor_text = f.read()
     
     eng_text = ""
     if os.path.exists(eng_path):
@@ -82,7 +90,7 @@ def run_qc():
     eng_lines = eng_text.split('\n') if eng_text else []
     
     lines_per_chunk = 50
-    num_chunks = (max(len(vi_lines), len(kor_lines)) + lines_per_chunk - 1) // lines_per_chunk
+    num_chunks = (max(len(vi_lines), len(kor_lines), len(eng_lines)) + lines_per_chunk - 1) // lines_per_chunk
     
     full_report = [f"# BAO CAO QC REVIEW - {time.strftime('%d/%m/%Y %H:%M:%S')}\n"]
     new_terms_suggestions = []

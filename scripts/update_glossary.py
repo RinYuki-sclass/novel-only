@@ -3,6 +3,10 @@ import os
 import json
 import pandas as pd
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Dam bao output ho tro UTF-8
 if sys.stdout.encoding != 'utf-8':
@@ -14,18 +18,20 @@ def update_glossary():
     
     # --- CAU HINH LOCAL DE TEST ---
     local_service_account_path = "service-account.json" 
-    local_sheet_url = "https://docs.google.com/spreadsheets/d/1Rm6BLnW6yj019GMLHxxsQGDYCHQdz8z-cALrmdCfdro/edit?usp=sharing"
+    local_sheet_url = "https://docs.google.com/spreadsheets/d/1LzYUaFv0KfzIy0y_ju2IxA5U_Pyu7B6Noup8CCaeZM8/edit?usp=sharing"
     # -----------------------------
 
     service_account_str = os.environ.get("GOOGLE_SERVICE_ACCOUNT")
     sheet_url = local_sheet_url if local_sheet_url else os.environ.get("GOOGLE_SHEET_URL")
     
-    if not (service_account_str or local_service_account_path) or not sheet_url:
-        print("[ERROR] Thieu thong tin xac thuc hoac URL cua Google Sheet.")
+    # Kiem tra xac thuc
+    has_local_auth = local_service_account_path and os.path.exists(local_service_account_path)
+    if not (service_account_str or has_local_auth) or not sheet_url:
+        print("[ERROR] Thieu thong tin xac thuc (service-account.json hoac GOOGLE_SERVICE_ACCOUNT) hoac URL cua Google Sheet.")
         return
 
     try:
-        if local_service_account_path and os.path.exists(local_service_account_path):
+        if has_local_auth:
             print(f"- Su dung file xac thuc local: {local_service_account_path}")
             gc = gspread.service_account(filename=local_service_account_path)
             with open(local_service_account_path, 'r') as f:
@@ -33,11 +39,16 @@ def update_glossary():
                 email = info.get('client_email')
                 print(f"- Email Service Account: {email}")
                 print(f"!!! QUAN TRONG: Vao Google Sheet -> nut 'Share' -> Them email '{email}' voi quyen Viewer.")
-        else:
+        elif service_account_str:
+            print("- Su dung thong tin xac thuc tu bien moi truong.")
             service_account_info = json.loads(service_account_str)
             gc = gspread.service_account_from_dict(service_account_info)
             if service_account_info:
                 print(f"- Email Service Account: {service_account_info.get('client_email')}")
+        else:
+            # Truong hop nay ly thuyet khong xay ra do da check o tren
+            print("[ERROR] Khong tim thay thong tin xac thuc.")
+            return
             
         sh = gc.open_by_url(sheet_url)
         print(f"[OK] Da ket noi thanh cong voi: {sh.title}")
@@ -74,21 +85,37 @@ def update_glossary():
                     narration_pronouns = []
                     for name in df_xh.index:
                         if name in df_xh.columns:
-                            val = df_xh.loc[name, name]
-                            if val and str(val).strip() and val != '-':
+                            val = str(df_xh.loc[name, name]).strip()
+                            if val and val != '-' and val.lower() != 'nan':
                                 narration_pronouns.append(f"{name}: {val}")
                     
                     if narration_pronouns:
-                        f.write("### Dai tu khi ke chuyen (Ngoi thu 3):\n")
+                        f.write("### Đại từ khi kể chuyện (Ngôi thứ 3):\n")
                         f.write(", ".join(narration_pronouns) + "\n\n")
 
-                    f.write("### Cach goi nhau trong doi thoai (Ngoi 1 goi Ngoi 2):\n")
+                    f.write("### Cách gọi nhau trong đối thoại (Ngôi 1 gọi Ngôi 2):\n")
                     for speaker in df_xh.index:
                         for listener in df_xh.columns:
-                            if speaker == listener: continue # Da xu ly o tren
-                            call_name = df_xh.loc[speaker, listener]
-                            if call_name and str(call_name).strip() and call_name != '-':
-                                f.write(f"- {speaker} goi {listener} la: \"{call_name}\"\n")
+                            if speaker == listener: continue # Đã xử lý ở trên
+                            call_name = str(df_xh.loc[speaker, listener]).strip()
+                            if call_name and call_name != '-' and call_name.lower() != 'nan':
+                                # Xử lý format "A - B" -> "xưng A gọi B"
+                                lines = call_name.split('\n')
+                                processed_lines = []
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line: continue
+                                    if ' - ' in line:
+                                        parts = line.split(' - ')
+                                        processed_lines.append(f"xưng {parts[0].strip()} gọi {parts[1].strip()}")
+                                    elif '-' in line:
+                                        parts = line.split('-')
+                                        processed_lines.append(f"xưng {parts[0].strip()} gọi {parts[1].strip()}")
+                                    else:
+                                        processed_lines.append(line)
+                                
+                                final_call = ", ".join(processed_lines)
+                                f.write(f"- {speaker} gọi {listener} là: {final_call}\n")
                     f.write("\n")
                 except Exception as e: print(f"Loi sheet Xung ho: {e}")
 
@@ -99,53 +126,53 @@ def update_glossary():
                 try:
                     data_nv = ws_nv.get_all_values()
                     if len(data_nv) > 1:
-                        # Tao DataFrame tu gia tri thô, bo qua loi header trung
-                        df_nv = pd.DataFrame(data_nv[1:], columns=data_nv[0])
+                        # Sử dụng index-based access cho bố cục mới: A(0):Tên, B(1):Giới tính, D(3):Đại từ, I(8):Vai trò, J(9):Biệt danh
                         f.write("## 2. THONG TIN NHAN VAT\n")
-                        for _, row in df_nv.iterrows():
-                            ten = str(row.get('Tên', '')).strip()
-                            tuoi = str(row.get('Tuổi', '')).strip()
-                            ghi_chu = str(row.get('Ghi chú', '')).strip()
-                            sk_raw = str(row.get('Skill (raw)', '')).strip()
-                            sk_eng = str(row.get('Skill (eng)', '')).strip()
-                            sk_vn = str(row.get('Skill (vn)', '')).strip()
+                        for row in data_nv[1:]:
+                            if len(row) < 1: continue
+                            ten = str(row[0]).strip()
+                            gioi_tinh = str(row[1]).strip() if len(row) > 1 else ""
+                            dai_tu = str(row[3]).strip() if len(row) > 3 else ""
+                            vai_tro = str(row[8]).strip() if len(row) > 8 else ""
+                            biet_danh = str(row[9]).strip() if len(row) > 9 else ""
                             
-                            if ten and ten != 'nan' and ten != '':
+                            if ten and ten.lower() != 'nan' and ten != '':
                                 line = f"- {ten}"
-                                if tuoi and tuoi != 'nan': line += f" ({tuoi} tuổi)"
-                                if ghi_chu and ghi_chu != 'nan': line += f": {ghi_chu}"
+                                details = []
+                                if gioi_tinh and gioi_tinh.lower() != 'nan': details.append(gioi_tinh)
+                                if dai_tu and dai_tu.lower() != 'nan': details.append(f"đại từ: {dai_tu}")
+                                if vai_tro and vai_tro.lower() != 'nan': details.append(f"vai trò: {vai_tro}")
+                                if biet_danh and biet_danh.lower() != 'nan': details.append(f"biệt danh: {biet_danh}")
                                 
-                                # Them thong tin skill neu co
-                                skills = []
-                                if sk_raw and sk_raw != 'nan': skills.append(sk_raw)
-                                if sk_eng and sk_eng != 'nan': skills.append(sk_eng)
-                                if sk_vn and sk_vn != 'nan': skills.append(f"-> {sk_vn}")
-                                
-                                if skills:
-                                    line += " [Skill: " + " / ".join(skills) + "]"
-                                
+                                if details:
+                                    line += " (" + ", ".join(details) + ")"
                                 f.write(line + "\n")
                         f.write("\n")
                 except Exception as e: print(f"Loi sheet Nhan vat: {e}")
 
-            # --- 3. XU LY SHEET THUAT NGU ---
-            print("- Dang xu ly sheet 'Thuat ngu'...")
-            ws_tn = get_ws("Thuật ngữ chi tiết")
-            if ws_tn:
+            # --- 3. XU LY SHEET TU VUNG ---
+            print("- Dang xu ly sheet 'Từ vựng'...")
+            ws_tv = get_ws("Từ vựng")
+            if ws_tv:
                 try:
-                    data_tn = ws_tn.get_all_values()
-                    if len(data_tn) > 1:
-                        # Xu ly tuong tu cho Thuat ngu
-                        df_tn = pd.DataFrame(data_tn[1:], columns=data_tn[0])
+                    data_tv = ws_tv.get_all_values()
+                    if len(data_tv) > 1:
                         f.write("## 3. THUAT NGU VA TEN RIENG\n")
-                        for _, row in df_tn.iterrows():
-                            han = str(row.get('Tiếng hàn', '')).strip()
-                            anh = str(row.get('Tiếng anh', '')).strip()
-                            dich = str(row.get('Dịch', '')).strip()
-                            if han or anh or dich:
-                                f.write(f"- {han} | {anh} -> {dich}\n")
+                        for row in data_tv[1:]:
+                            # Bố cục mới: A: Chap, B: Hàn, C: Việt, D: Anh
+                            chap = str(row[0]).strip() if len(row) > 0 else ""
+                            han = str(row[1]).strip() if len(row) > 1 else ""
+                            viet = str(row[2]).strip() if len(row) > 2 else ""
+                            anh = str(row[3]).strip() if len(row) > 3 else ""
+                            
+                            if han or viet or anh:
+                                line = f"- {han}"
+                                if anh: line += f" | {anh}"
+                                if viet: line += f" -> {viet}"
+                                if chap: line += f" (Chap {chap})"
+                                f.write(line + "\n")
                         f.write("\n")
-                except Exception as e: print(f"Loi sheet Thuat ngu: {e}")
+                except Exception as e: print(f"Loi sheet Tu vung: {e}")
 
         print(f"[OK] Da cap nhat thanh cong {output_md} tu Google Sheets!")
 

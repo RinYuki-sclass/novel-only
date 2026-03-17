@@ -510,7 +510,7 @@ def build_highlight_pattern(gl_text, notes_text):
             if not line.startswith('-'): continue
             if '->' in line:
                 parts = line.split('->')
-                term_part = parts[-1].split('/')[0].strip() # in case of multiple with /
+                term_part = parts[-1].split('/')[0].split('(')[0].strip() # in case of multiple with / or info in ( )
                 if term_part: terms.add(term_part)
             else:
                 m = re.match(r'- ([A-Za-z0-9\s\w]+)(?:[\(\[]|$)', line)
@@ -707,8 +707,8 @@ with tab_trans:
         target_model = "gemini-3-flash-preview"
         log_action("Dịch Thuật", f"Chế độ: {'Re-Refine' if mode.startswith('✨') else 'Dịch mới'} | EN: {len((eng_text or '').splitlines())} dòng | Model: AUTO")
 
-        if not eng_text or not kor_text:
-            st.error("❌ Thiếu dữ liệu EN hoặc KR!")
+        if not eng_text.strip() and not kor_text.strip():
+            st.error("❌ Thiếu dữ liệu EN hoặc KR! Vui lòng nhập ít nhất một ngôn ngữ nguồn.")
             st.stop()
 
         glossary = load_file(PATHS['glossary'])
@@ -751,12 +751,15 @@ with tab_trans:
 
             draft = ""
             if not is_refine:
+                source_text = ec if ec.strip() else kc
+                source_lang = "English" if ec.strip() else "Korean"
+
                 sys_d = (
-                    "You are a professional novel translator. Translate English into natural Vietnamese. "
+                    f"You are a professional novel translator. Translate {source_lang} into natural Vietnamese. "
                     "STRICT RULE: ONLY include suffixes (-ie,-ah,-ya) IF present in source. "
                     "Output ONLY the translation."
                 )
-                prompt_d = f"--- PREVIOUS CONTEXT (For reference only) ---\n{prev_ec}\n\n--- TRANSLATE THIS ---\n{ec}" if prev_ec else ec
+                prompt_d = f"--- PREVIOUS CONTEXT (For reference only) ---\n{prev_ec if source_lang == 'English' else prev_kc}\n\n--- TRANSLATE THIS ---\n{source_text}" if (prev_ec if source_lang == 'English' else prev_kc) else source_text
                 draft = generate_with_retry(target_model, prompt_d, sys_d, None)
             else:
                 draft = "\n\n".join(draft_p[s:e])
@@ -833,8 +836,8 @@ with tab_qc:
         if st.button("🔍 Chạy QC", type="primary"):
             target_model = "gemini-2.5-flash"
             log_action("QC Review", f"VI: {len((vi_t or '').splitlines())} dòng | KR: {len((kr_t or '').splitlines())} dòng | Model: AUTO")
-            if not vi_t or not kr_t:
-                st.error("❌ Thiếu VI hoặc KR!")
+            if not vi_t.strip() or (not kr_t.strip() and not en_t.strip()):
+                st.error("❌ Thiếu Bản dịch VI hoặc thiếu cả hai ngôn ngữ nguồn (KR/EN) để đối chiếu!")
                 st.stop()
 
             glossary = load_file(PATHS['glossary'])
@@ -844,7 +847,7 @@ with tab_qc:
             en_lines = en_t.split('\n') if en_t else []
 
             lpc = 50
-            nc = (max(len(vi_lines), len(kr_lines)) + lpc - 1) // lpc
+            nc = (max(len(vi_lines), len(kr_lines), len(en_lines)) + lpc - 1) // lpc
             report = [f"# BÁO CÁO QC — {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"]
             new_terms = []
 

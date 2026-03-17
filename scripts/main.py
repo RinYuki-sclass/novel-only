@@ -51,14 +51,25 @@ def run_pipeline(mode='all'):
     glossary_path = 'glossary/glossary.md'
     notes_path = 'glossary/personal_notes.md'
     
-    if not os.path.exists(eng_path) or not os.path.exists(kor_path):
-        print("[ERROR] Thieu file dau vao trong 'input/trans/'")
+    if not os.path.exists(eng_path) and not os.path.exists(kor_path):
+        print("[ERROR] Thieu ca hai file dau vao eng.txt va kor.txt trong 'input/trans/'")
         return
 
-    with open(eng_path, 'r', encoding='utf-8') as f: eng_text = f.read()
-    with open(kor_path, 'r', encoding='utf-8') as f: kor_text = f.read()
-    with open(glossary_path, 'r', encoding='utf-8') as f: glossary_text = f.read() if os.path.exists(glossary_path) else ""
-    with open(notes_path, 'r', encoding='utf-8') as f: notes_text = f.read() if os.path.exists(notes_path) else ""
+    eng_text = ""
+    if os.path.exists(eng_path):
+        with open(eng_path, 'r', encoding='utf-8') as f: eng_text = f.read()
+    
+    kor_text = ""
+    if os.path.exists(kor_path):
+        with open(kor_path, 'r', encoding='utf-8') as f: kor_text = f.read()
+
+    glossary_text = ""
+    if os.path.exists(glossary_path):
+        with open(glossary_path, 'r', encoding='utf-8') as f: glossary_text = f.read()
+    
+    notes_text = ""
+    if os.path.exists(notes_path):
+        with open(notes_path, 'r', encoding='utf-8') as f: notes_text = f.read()
 
     if mode == 'refine':
         if not os.path.exists(draft_input_path):
@@ -96,14 +107,17 @@ def run_pipeline(mode='all'):
         draft = ""
         if mode == 'all':
             # BUOC 1: DICH THO
+            source_text = eng_chunk if eng_chunk.strip() else kor_chunk
+            source_lang = "English" if eng_chunk.strip() else "Korean"
+
             sys_draft = (
-                "You are a professional novel translator. Translate English into natural Vietnamese. "
+                f"You are a professional novel translator. Translate {source_lang} into natural Vietnamese. "
                 "STRICT RULE for character names: ONLY include affectionate suffixes (e.g., -ie, -ah, -ya) IF they are already present in the source text. "
                 "If a name appears without a suffix (e.g., 'Yoohyun'), do NOT add one. "
                 "If it has a suffix (e.g., 'Yoohyun-ie'), keep it exactly as is.\n"
                 "Output ONLY the translation. No explanations."
             )
-            draft = generate_with_retry(model='gemini-2.5-flash', contents=eng_chunk, system_instruction=sys_draft)
+            draft = generate_with_retry(model='gemini-2.5-flash', contents=source_text, system_instruction=sys_draft)
         else:
             # Lấy draft từ file đã có
             draft = "\n\n".join(draft_paragraphs[start:end])
