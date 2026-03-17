@@ -62,11 +62,12 @@ ANIMAL_TOKENS = [
     "🐮 Bò",        "🐷 Lợn",
 ]
 
-@st.cache_resource
 def _get_cookie_manager():
-    """Singleton CookieManager — must be cached to avoid multiple component instances."""
+    """CookieManager must be initialized in every run to handle browser communication."""
     import extra_streamlit_components as stx
-    return stx.CookieManager(key="trans_tool_cookies")
+    if 'cookie_manager' not in st.session_state:
+        st.session_state['cookie_manager'] = stx.CookieManager(key="trans_tool_cookies")
+    return st.session_state['cookie_manager']
 
 def assign_animal_token() -> str:
     """
@@ -563,34 +564,36 @@ with st.sidebar:
     st.markdown("**🤖 AI Models / Tự động điều phối**")
     st.caption("Ứng dụng tự động chọn model phù hợp nhất cho từng tác vụ và tự động chạy sang Fallback khi hết Rate Limit.")
     
-    # RPD Usage tracker for ALL models
+    # RPD Usage tracker for ALL models — real-time via fragment
     if rotator and rotator.total > 0:
-        counts = get_rpd_counts()
-        for mod, desc in model_guide.items():
-            with st.expander(f"{desc} ({mod})", expanded=True):
-                lim = RPD_LIMITS.get(mod, 20)
-                for idx in range(rotator.total):
-                    used = counts.get(f"{idx}_{mod}", 0)
-                    is_active = (idx == rotator.current_idx)
-                    label = f"Key {idx+1}"
-                    pct = min(used / lim, 1.0) if lim > 0 else 0
-                    if pct >= 0.95:
-                        color = "#ff6b6b"   # đỏ
-                    elif pct >= 0.75:
-                        color = "#f0a500"   # cam
-                    else:
-                        color = "#51cf66"   # xanh
-                    st.markdown(
-                        f"""
-                        <div style='margin-bottom:6px'>
-                        <div style='font-size:11px;color:#a5adce;display:flex;justify-content:space-between'>
-                            <span>{label}</span><span style='color:{color}'>{used:,} / {lim:,}</span></div>
-                        <div style='background:#292c3c;border-radius:4px;height:4px;overflow:hidden'>
-                            <div style='width:{pct*100:.1f}%;background:{color};height:100%;border-radius:4px;
-                            transition:width 0.3s'></div></div></div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+        @st.fragment(run_every=10)
+        def _rpd_tracker():
+            counts = get_rpd_counts()
+            for mod, desc in model_guide.items():
+                with st.expander(f"{desc} ({mod})", expanded=True):
+                    lim = RPD_LIMITS.get(mod, 20)
+                    for idx in range(rotator.total):
+                        used = counts.get(f"{idx}_{mod}", 0)
+                        label = f"Key {idx+1}"
+                        pct = min(used / lim, 1.0) if lim > 0 else 0
+                        if pct >= 0.95:
+                            color = "#ff6b6b"   # đỏ
+                        elif pct >= 0.75:
+                            color = "#f0a500"   # cam
+                        else:
+                            color = "#51cf66"   # xanh
+                        st.markdown(
+                            f"""
+                            <div style='margin-bottom:6px'>
+                            <div style='font-size:11px;color:#a5adce;display:flex;justify-content:space-between'>
+                                <span>{label}</span><span style='color:{color}'>{used:,} / {lim:,}</span></div>
+                            <div style='background:#292c3c;border-radius:4px;height:4px;overflow:hidden'>
+                                <div style='width:{pct*100:.1f}%;background:{color};height:100%;border-radius:4px;
+                                transition:width 0.3s'></div></div></div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+        _rpd_tracker()
 
     chunk_size = st.slider("Đoạn/chunk (dịch)", 5, 30, 15, 5)
 
@@ -629,9 +632,66 @@ with st.sidebar:
     st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
 # ============================================================
-# MAIN TABS
+# MAIN NAVIGATION (Persistent on F5)
 # ============================================================
-tab_home, tab_trans, tab_qc, tab_diff, tab_sbs, tab_manhwa, tab_dl, tab_glossary = st.tabs(["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "📚 Glossary"])
+MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "📚 Glossary"]
+
+# CSS hack để biến Radio thành giao diện Tab (ẩn chấm tròn, tạo khối vuông)
+st.markdown("""
+    <style>
+    /* Ẩn dấu radio circle */
+    [data-testid="stHorizontalRadio"] label div:first-child {
+        display: none !important;
+    }
+    /* Style cho từng tabItem */
+    [data-testid="stHorizontalRadio"] label {
+        padding: 8px 20px !important;
+        border-radius: 10px !important;
+        border: 1px solid #e0e0e0 !important;
+        background-color: #f8f9fa !important;
+        margin-right: 8px !important;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    /* Khi được chọn (checked) */
+    [data-testid="stHorizontalRadio"] label[data-checked="true"] {
+        background-color: #4B90FF !important;
+        color: white !important;
+        border-color: #4B90FF !important;
+        box-shadow: 0 4px 6px rgba(75, 144, 255, 0.2);
+    }
+    /* Hover effect */
+    [data-testid="stHorizontalRadio"] label:hover {
+        border-color: #4B90FF !important;
+        background-color: #e8f0fe !important;
+    }
+    /* Căn chỉnh lại khoảng cách */
+    [data-testid="stHorizontalRadio"] div[role="radiogroup"] {
+        gap: 0px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Lấy tab hiện tại từ URL query params
+q_tab = st.query_params.get("tab", MENU_ITEMS[0])
+if q_tab not in MENU_ITEMS: q_tab = MENU_ITEMS[0]
+
+# Khởi tạo session_state để tránh delay 2 lần bấm
+if 'main_tab' not in st.session_state:
+    st.session_state['main_tab'] = q_tab
+
+# Callback khi click chuyển tab
+def on_tab_change():
+    st.query_params["tab"] = st.session_state.main_tab
+
+# Hiển thị Menu (đã được CSS hóa thành Tab)
+current_menu = st.radio("📍 Menu:", MENU_ITEMS, 
+                        index=MENU_ITEMS.index(st.session_state.main_tab), 
+                        key="main_tab",
+                        on_change=on_tab_change,
+                        horizontal=True,
+                        label_visibility="collapsed")
 
 # Log page visit (once per session)
 if 'session_logged' not in st.session_state:
@@ -639,7 +699,7 @@ if 'session_logged' not in st.session_state:
     log_action("Truy cập", "Mở ứng dụng")
 
 # =================== TAB 0: HOME / HƯỚNG DẪN ===================
-with tab_home:
+if current_menu == "🏠 Hướng dẫn":
     st.markdown("""
     ## Chào mừng bạn đến với **Trans-Tool** 👋  
     *Công cụ hỗ trợ Dịch thuật, Kiểm duyệt QC và Quét Truyện Tranh thông minh tích hợp AI cực mạnh do Team xây dựng.*
@@ -680,7 +740,7 @@ with tab_home:
     """)
 
 # =================== TAB 1: DỊCH THUẬT ===================
-with tab_trans:
+elif current_menu == "📝 Dịch Thuật":
     if not client:
         st.warning("⚠️ Cấu hình API Key trong `.env` trước.")
         st.stop()
@@ -813,7 +873,7 @@ with tab_trans:
             st.info("💾 Đã lưu `output/vi_final.txt` | Bản cũ lưu tại `vi_previous.txt`")
 
 # =================== TAB 2: QC REVIEW ===================
-with tab_qc:
+elif current_menu == "🔍 QC Review":
     if not client:
         st.warning("⚠️ Cấu hình API Key trước.")
     else:
@@ -836,8 +896,11 @@ with tab_qc:
         if st.button("🔍 Chạy QC", type="primary"):
             target_model = "gemini-2.5-flash"
             log_action("QC Review", f"VI: {len((vi_t or '').splitlines())} dòng | KR: {len((kr_t or '').splitlines())} dòng | Model: AUTO")
-            if not vi_t.strip() or (not kr_t.strip() and not en_t.strip()):
-                st.error("❌ Thiếu Bản dịch VI hoặc thiếu cả hai ngôn ngữ nguồn (KR/EN) để đối chiếu!")
+            if not vi_t.strip():
+                st.error("❌ Thiếu Bản dịch VI để đối chiếu!")
+                st.stop()
+            if not kr_t.strip() and not en_t.strip():
+                st.error("❌ Cần ít nhất một ngôn ngữ nguồn (KR hoặc EN) để đối chiếu!")
                 st.stop()
 
             glossary = load_file(PATHS['glossary'])
@@ -911,7 +974,7 @@ with tab_qc:
                     st.markdown(st.session_state['new_terms'])
 
 # =================== TAB 3: SO SÁNH (DIFF) ===================
-with tab_diff:
+elif current_menu == "📊 So Sánh":
     st.markdown("#### 📊 So sánh bản dịch")
     st.caption("So sánh hai phiên bản dịch để thấy sự khác biệt — hữu ích sau khi Re-Refine.")
 
@@ -961,7 +1024,7 @@ with tab_diff:
             st.session_state['last_diff'] = diff_html
 
 # =================== TAB 4: ĐỐI CHIẾU SIDE-BY-SIDE ===================
-with tab_sbs:
+elif current_menu == "📖 Đối Chiếu":
     st.markdown("#### 📖 Đối chiếu bản dịch với bản gốc")
     st.caption("Hiển thị song song từng dòng bản dịch và bản gốc để bạn tự đối chiếu, rà soát.")
 
@@ -993,7 +1056,13 @@ with tab_sbs:
         if not sbs_vi:
             st.warning("⚠️ Chưa có `output/vi_final.txt`. Hãy dịch trước.")
     else:
-        sbs_vi = st.text_area("Bản dịch Tiếng Việt", height=180, key="sbs_vi_in", placeholder="Paste bản dịch VI...")
+        # Key widget thay đổi mỗi lần Lưu → Streamlit tạo widget mới, nhận value mới
+        _vi_ver = st.session_state.get('_sbs_vi_ver', 0)
+        _vi_default = ""
+        if '_sbs_vi_pending' in st.session_state:
+            _vi_default = st.session_state.pop('_sbs_vi_pending')
+        sbs_vi = st.text_area("Bản dịch Tiếng Việt", value=_vi_default, height=180,
+                               key=f"sbs_vi_in_{_vi_ver}", placeholder="Paste bản dịch VI...")
         c1, c2 = st.columns(2)
         with c1:
             sbs_en = st.text_area("Bản gốc EN", height=180, key="sbs_en_in", placeholder="Paste bản EN...")
@@ -1026,13 +1095,33 @@ with tab_sbs:
         lines_per_page = 50
         total_pages = max(1, (max_lines + lines_per_page - 1) // lines_per_page)
 
+        # Khởi tạo trạng thái trang nếu chưa có
+        if 'sbs_current_page' not in st.session_state:
+            st.session_state['sbs_current_page'] = 1
+        
+        def update_sbs_page(key):
+            st.session_state['sbs_current_page'] = st.session_state[key]
+
+        page_options = list(range(1, total_pages + 1))
+        page_format = lambda x: f"Trang {x} (dòng {(x-1)*lines_per_page+1}~{min(x*lines_per_page, max_lines)})"
+
         st.divider()
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
-            page = st.selectbox(f"Trang (tổng {total_pages} trang, {max_lines} dòng)",
-                                range(1, total_pages + 1), key="sbs_page",
-                                format_func=lambda x: f"Trang {x} (dòng {(x-1)*lines_per_page+1}~{min(x*lines_per_page, max_lines)})")
+            # Dropdown phía TRÊN
+            st.selectbox(f"Trang (tổng {total_pages})",
+                         page_options,
+                         index=st.session_state['sbs_current_page'] - 1,
+                         key="sbs_top",
+                         on_change=update_sbs_page,
+                         args=("sbs_top",),
+                         format_func=page_format)
+        
+        # Lấy giá trị trang hiện tại để tính toán start/end
+        page = st.session_state['sbs_current_page']
 
+        st.divider()
+        c1, c2, c3 = st.columns([1, 2, 1])
         start = (page - 1) * lines_per_page
         end = min(start + lines_per_page, max_lines)
 
@@ -1071,55 +1160,113 @@ with tab_sbs:
             html_parts.append('</table></div>')
             st.markdown('\n'.join(html_parts), unsafe_allow_html=True)
             st.caption(f"Hiển thị dòng {start+1} → {end} / {max_lines}")
+
+            # Pagination ở dưới cho chế độ xem
+            st.divider()
+            cb1, cb2, cb3 = st.columns([1, 2, 1])
+            with cb2:
+                st.selectbox("Trang dưới",
+                             page_options,
+                             index=st.session_state['sbs_current_page'] - 1,
+                             key="sbs_bottom_view",
+                             on_change=update_sbs_page,
+                             args=("sbs_bottom_view",),
+                             format_func=page_format,
+                             label_visibility="collapsed")
         else:
-            # ===== CHẾ ĐỘ CHỈNH SỬA TAY =====
-            import pandas as pd
-            st.info("✏️ **Nhấp đúp** vào ô cột **Tiếng Việt** để sửa. Nhấn **Enter** xác nhận, rồi bấm **💾 Lưu**.")
+            # ===== CHẾ ĐỘ CHỈNH SỬA TAY (custom rows - tự giãn chiều cao) =====
+            st.info("✏️ Chỉnh sửa trực tiếp ô **Tiếng Việt** bên phải. Bấm **💾 Lưu** khi xong.")
 
-            data = []
+            # Xác định bố cục cột dựa vào nguồn hiển thị
+            if show_en and show_kr:
+                ratios = [1, 5, 5, 7]
+                hdr_labels = ["#", "🇺🇸 EN", "🇰🇷 KR", "🇻🇳 Tiếng Việt"]
+            elif show_en:
+                ratios = [1, 6, 7]
+                hdr_labels = ["#", "🇺🇸 EN", "🇻🇳 Tiếng Việt"]
+            else:
+                ratios = [1, 6, 7]
+                hdr_labels = ["#", "🇰🇷 KR", "🇻🇳 Tiếng Việt"]
+
+            # Header
+            hdr_cols = st.columns(ratios)
+            for i, lbl in enumerate(hdr_labels):
+                hdr_cols[i].markdown(f"<small><b>{lbl}</b></small>", unsafe_allow_html=True)
+            st.divider()
+
+            # Từng dòng
             for idx in range(start, end):
-                row = {"#": idx + 1}
+                vi_val = vi_lines[idx] if idx < len(vi_lines) else ""
+                # Tính chiều cao text_area dựa trên số dòng thực tế (tối thiểu 3 dòng)
+                n_lines = max(3, len(vi_val.splitlines()) + 1) if vi_val else 3
+                ta_height = min(400, max(100, n_lines * 26 + 20))
+
+                cols = st.columns(ratios)
+                with cols[0]:
+                    st.markdown(
+                        f"<div style='padding-top:8px;color:#888;font-size:12px;text-align:center'>{idx+1}</div>",
+                        unsafe_allow_html=True
+                    )
+                src_col_i = 1
                 if show_en:
-                    row["🇺🇸 EN"] = en_lines[idx] if idx < len(en_lines) else ""
+                    with cols[src_col_i]:
+                        en_val = html_lib.escape(en_lines[idx]) if idx < len(en_lines) else ""
+                        st.markdown(
+                            f"<div style='padding:6px 4px;font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.5'>{en_val}</div>",
+                            unsafe_allow_html=True
+                        )
+                    src_col_i += 1
                 if show_kr:
-                    row["🇰🇷 KR"] = kr_lines[idx] if idx < len(kr_lines) else ""
-                row["🇻🇳 Tiếng Việt"] = vi_lines[idx] if idx < len(vi_lines) else ""
-                data.append(row)
+                    with cols[src_col_i]:
+                        kr_val = html_lib.escape(kr_lines[idx]) if idx < len(kr_lines) else ""
+                        st.markdown(
+                            f"<div style='padding:6px 4px;font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.5'>{kr_val}</div>",
+                            unsafe_allow_html=True
+                        )
+                with cols[-1]:
+                    # Dùng key duy nhất cho mỗi dòng
+                    st.text_area(
+                        "VI", value=vi_val, height=ta_height,
+                        key=f"vi_edit_p{page}_{idx}",
+                        label_visibility="collapsed"
+                    )
+                st.divider()
 
-            df = pd.DataFrame(data)
-
-            disabled_cols = ["#"]
-            if show_en: disabled_cols.append("🇺🇸 EN")
-            if show_kr: disabled_cols.append("🇰🇷 KR")
-
-            col_config = {
-                "#": st.column_config.NumberColumn("#", width="small"),
-                "🇻🇳 Tiếng Việt": st.column_config.TextColumn("🇻🇳 Tiếng Việt", width="large"),
-            }
-
-            edited = st.data_editor(
-                df, disabled=disabled_cols, column_config=col_config,
-                use_container_width=True, hide_index=True,
-                num_rows="fixed", key=f"sbs_editor_p{page}"
-            )
+            # Dropdown phía DƯỚI (Chế độ Sửa) - đưa lên trước nút Lưu
+            st.divider()
+            cb1, cb2, cb3 = st.columns([1, 2, 1])
+            with cb2:
+                st.selectbox("Trang dưới edit",
+                             page_options,
+                             index=st.session_state['sbs_current_page'] - 1,
+                             key="sbs_bottom_edit",
+                             on_change=update_sbs_page,
+                             args=("sbs_bottom_edit",),
+                             format_func=page_format,
+                             label_visibility="collapsed")
 
             col_save, col_info = st.columns([1, 3])
             with col_save:
                 if st.button("💾 Lưu thay đổi", type="primary", key="sbs_save"):
-                    for _, row in edited.iterrows():
-                        line_idx = int(row["#"]) - 1
-                        new_val = str(row["🇻🇳 Tiếng Việt"]) if row["🇻🇳 Tiếng Việt"] else ""
-                        if line_idx < len(vi_lines):
-                            vi_lines[line_idx] = new_val
+                    for idx in range(start, end):
+                        new_val = st.session_state.get(
+                            f"vi_edit_p{page}_{idx}",
+                            vi_lines[idx] if idx < len(vi_lines) else ""
+                        )
+                        if idx < len(vi_lines):
+                            vi_lines[idx] = new_val
                     st.session_state['sbs_data']['vi'] = vi_lines
-                    save_file(PATHS['output'], "\n".join(vi_lines))
-                    st.success("✅ Đã lưu thay đổi vào `output/vi_final.txt`!")
-                    st.balloons()
+                    full_text = "\n".join(vi_lines)
+                    save_file(PATHS['output'], full_text)
+                    # Cập nhật state để phản hồi ngay lập tức
+                    st.session_state['_sbs_vi_pending'] = full_text
+                    st.session_state['trans_result'] = full_text
+                    st.rerun()
             with col_info:
                 st.caption(f"Đang sửa dòng {start+1} → {end} / {max_lines}")
 
 # =================== TAB 5: TRUYỆN TRANH ===================
-with tab_manhwa:
+elif current_menu == "🎨 Truyện Tranh":
     if not client:
         st.warning("⚠️ Cấu hình API Key trước.")
     else:
@@ -1358,6 +1505,7 @@ with tab_manhwa:
                         with c2:
                             st.markdown('<div class="sticky-anchor"></div>', unsafe_allow_html=True)
                             current_val = parsed_data.get(img_name, "")
+                            st.markdown('<style>textarea[aria-label="Bản dịch:"] { font-size: 26px !important; line-height: 1.5 !important; }</style>', unsafe_allow_html=True)
                             input_val = st.text_area("Bản dịch:", current_val, height=500, key=f"mh_edit_{sess_choice}_{img_name}")
                             new_parsed_data[img_name] = input_val
                         st.divider()
@@ -1381,7 +1529,7 @@ with tab_manhwa:
                 st.error("Không tìm thấy thư mục ảnh cho phiên bản này.")
 
 # =================== TAB 6: TẢI TRUYỆN ===================
-with tab_dl:
+elif current_menu == "📥 Tải Truyện":
     st.markdown("#### 📥 Tải ảnh truyện tranh hàng loạt")
     st.caption("Công cụ này sử dụng `gallery-dl` để tự động cào ảnh gốc từ các trang truyện (Naver, Kakao, Webtoons...) về rồi nén thành file ZIP cho bạn.")
     
@@ -1509,7 +1657,7 @@ with tab_dl:
                         pass
 
 # =================== TAB 7: GLOSSARY ===================
-with tab_glossary:
+elif current_menu == "📚 Glossary":
     st.markdown("#### 📚 Quản lý Glossary")
 
     g_tab1, g_tab2, g_tab3 = st.tabs(["📖 Glossary", "📝 Personal Notes", "🔄 Đồng bộ"])
