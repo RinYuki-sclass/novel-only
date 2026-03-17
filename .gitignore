@@ -1,0 +1,23 @@
+# Secrets - KHONG DUOC PUSH LEN GITHUB
+.env
+service-account.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Personal data - do not push
+output/
+input/
+logs/
+*.txt
+!requirements.txt
