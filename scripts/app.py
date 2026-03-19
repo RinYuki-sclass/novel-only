@@ -12,7 +12,10 @@ import html as html_lib
 import threading
 import random
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def now_gmt7():
+    return datetime.now(timezone(timedelta(hours=7)))
 from dotenv import load_dotenv
 import re
 import shutil
@@ -78,7 +81,24 @@ def assign_animal_token() -> str:
     if 'animal_token' in st.session_state:
         return st.session_state['animal_token']
 
-    # 2. Try reading from browser cookie
+    # 2. Try reading synchronously from browser headers (fixes F5 reset issue)
+    try:
+        import urllib.parse
+        cookies_str = ""
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            cookies_str = st.context.headers.get("Cookie", "") or st.context.headers.get("cookie", "")
+        for item in cookies_str.split(";"):
+            item = item.strip()
+            if item.startswith("trans_animal="):
+                val = urllib.parse.unquote(item.split("=", 1)[1])
+                if val.startswith('"') and val.endswith('"'): val = val[1:-1]
+                if val in ANIMAL_TOKENS:
+                    st.session_state['animal_token'] = val
+                    return val
+    except Exception:
+        pass
+
+    # 2.5 Fallback to CookieManager
     try:
         cm = _get_cookie_manager()
         existing = cm.get("trans_animal")
@@ -94,7 +114,7 @@ def assign_animal_token() -> str:
     try:
         from datetime import timedelta
         cm = _get_cookie_manager()
-        cm.set("trans_animal", token, expires_at=datetime.now() + timedelta(days=365))
+        cm.set("trans_animal", token, expires_at=now_gmt7() + timedelta(days=365))
     except Exception:
         pass
     return token
@@ -117,11 +137,11 @@ def get_device_type() -> str:
 def log_action(feature: str, details: str = ""):
     """Append one line to the daily log file. Never crashes the app."""
     try:
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = now_gmt7().strftime("%Y-%m-%d")
         log_file = os.path.join(LOGS_DIR, f"{today_str}.log")
         token = assign_animal_token()
         device = get_device_type()
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts = now_gmt7().strftime("%H:%M:%S")
         entry = f"[{today_str} {ts}] | {token:<18} | {device:<8} | {feature:<22} | {details}\n"
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
@@ -259,7 +279,7 @@ RPD_LIMITS = {
 
 def _load_rpd_counter() -> dict:
     """Load today's request counts from JSON file."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_gmt7().strftime("%Y-%m-%d")
     try:
         if os.path.exists(RPD_COUNTER_FILE):
             with open(RPD_COUNTER_FILE, 'r') as f:
@@ -511,7 +531,7 @@ def build_highlight_pattern(gl_text, notes_text):
             if not line.startswith('-'): continue
             if '->' in line:
                 parts = line.split('->')
-                term_part = parts[-1].split('/')[0].split('(')[0].strip() # in case of multiple with / or info in ( )
+                term_part = parts[-1].split('/')[0].strip() # in case of multiple with /
                 if term_part: terms.add(term_part)
             else:
                 m = re.match(r'- ([A-Za-z0-9\s\w]+)(?:[\(\[]|$)', line)
@@ -597,13 +617,7 @@ with st.sidebar:
 
     chunk_size = st.slider("Đoạn/chunk (dịch)", 5, 30, 15, 5)
 
-    st.divider()
-    st.markdown("### 📂 File status")
-    for name, key in [("EN (dịch)", 'eng_trans'), ("KR (dịch)", 'kor_trans'), ("Glossary", 'glossary'), ("Output", 'output')]:
-        p = PATHS[key]
-        ok = os.path.exists(p) and os.path.getsize(p) > 0
-        sz = f"({os.path.getsize(p)/1024:.1f}KB)" if ok else "(chưa có)"
-        st.markdown(f"{'✅' if ok else '⬜'} **{name}** {sz}")
+
     st.divider()
     # Log viewer
     st.markdown("### 📋 Activity Logs")
@@ -621,77 +635,24 @@ with st.sidebar:
                 lines = f.readlines()
             st.caption(f"{len(lines)} sự kiện")
             # Show last 50 entries, newest first
-            for line in reversed(lines[-50:]):
-                st.code(line.strip(), language=None)
+            log_text = "".join(reversed(lines[-50:]))
+            st.code(log_text.strip(), language=None)
             st.download_button(
                 "⬇️ Tải log", ''.join(lines),
                 f"log_{selected_date}.txt",
                 key="log_dl"
             )
     st.divider()
-    st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    st.caption(f"📅 {now_gmt7().strftime('%d/%m/%Y %H:%M')}")
 
 # ============================================================
 # MAIN NAVIGATION (Persistent on F5)
 # ============================================================
 MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "📚 Glossary"]
 
-# CSS hack để biến Radio thành giao diện Tab (ẩn chấm tròn, tạo khối vuông)
-st.markdown("""
-    <style>
-    /* Ẩn dấu radio circle */
-    [data-testid="stHorizontalRadio"] label div:first-child {
-        display: none !important;
-    }
-    /* Style cho từng tabItem */
-    [data-testid="stHorizontalRadio"] label {
-        padding: 8px 20px !important;
-        border-radius: 10px !important;
-        border: 1px solid #e0e0e0 !important;
-        background-color: #f8f9fa !important;
-        margin-right: 8px !important;
-        transition: all 0.2s ease;
-        cursor: pointer;
-        font-weight: 500;
-    }
-    /* Khi được chọn (checked) */
-    [data-testid="stHorizontalRadio"] label[data-checked="true"] {
-        background-color: #4B90FF !important;
-        color: white !important;
-        border-color: #4B90FF !important;
-        box-shadow: 0 4px 6px rgba(75, 144, 255, 0.2);
-    }
-    /* Hover effect */
-    [data-testid="stHorizontalRadio"] label:hover {
-        border-color: #4B90FF !important;
-        background-color: #e8f0fe !important;
-    }
-    /* Căn chỉnh lại khoảng cách */
-    [data-testid="stHorizontalRadio"] div[role="radiogroup"] {
-        gap: 0px !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+tabs = st.tabs(MENU_ITEMS)
+current_menu = None # Not used
 
-# Lấy tab hiện tại từ URL query params
-q_tab = st.query_params.get("tab", MENU_ITEMS[0])
-if q_tab not in MENU_ITEMS: q_tab = MENU_ITEMS[0]
-
-# Khởi tạo session_state để tránh delay 2 lần bấm
-if 'main_tab' not in st.session_state:
-    st.session_state['main_tab'] = q_tab
-
-# Callback khi click chuyển tab
-def on_tab_change():
-    st.query_params["tab"] = st.session_state.main_tab
-
-# Hiển thị Menu (đã được CSS hóa thành Tab)
-current_menu = st.radio("📍 Menu:", MENU_ITEMS, 
-                        index=MENU_ITEMS.index(st.session_state.main_tab), 
-                        key="main_tab",
-                        on_change=on_tab_change,
-                        horizontal=True,
-                        label_visibility="collapsed")
 
 # Log page visit (once per session)
 if 'session_logged' not in st.session_state:
@@ -699,7 +660,7 @@ if 'session_logged' not in st.session_state:
     log_action("Truy cập", "Mở ứng dụng")
 
 # =================== TAB 0: HOME / HƯỚNG DẪN ===================
-if current_menu == "🏠 Hướng dẫn":
+with tabs[0]:
     st.markdown("""
     ## Chào mừng bạn đến với **Trans-Tool** 👋  
     *Công cụ hỗ trợ Dịch thuật, Kiểm duyệt QC và Quét Truyện Tranh thông minh tích hợp AI cực mạnh do Team xây dựng.*
@@ -740,7 +701,7 @@ if current_menu == "🏠 Hướng dẫn":
     """)
 
 # =================== TAB 1: DỊCH THUẬT ===================
-elif current_menu == "📝 Dịch Thuật":
+with tabs[1]:
     if not client:
         st.warning("⚠️ Cấu hình API Key trong `.env` trước.")
         st.stop()
@@ -811,15 +772,12 @@ elif current_menu == "📝 Dịch Thuật":
 
             draft = ""
             if not is_refine:
-                source_text = ec if ec.strip() else kc
-                source_lang = "English" if ec.strip() else "Korean"
-
                 sys_d = (
-                    f"You are a professional novel translator. Translate {source_lang} into natural Vietnamese. "
+                    "You are a professional novel translator. Translate English into natural Vietnamese. "
                     "STRICT RULE: ONLY include suffixes (-ie,-ah,-ya) IF present in source. "
                     "Output ONLY the translation."
                 )
-                prompt_d = f"--- PREVIOUS CONTEXT (For reference only) ---\n{prev_ec if source_lang == 'English' else prev_kc}\n\n--- TRANSLATE THIS ---\n{source_text}" if (prev_ec if source_lang == 'English' else prev_kc) else source_text
+                prompt_d = f"--- PREVIOUS CONTEXT (For reference only) ---\n{prev_ec}\n\n--- TRANSLATE THIS ---\n{ec}" if prev_ec else ec
                 draft = generate_with_retry(target_model, prompt_d, sys_d, None)
             else:
                 draft = "\n\n".join(draft_p[s:e])
@@ -857,23 +815,29 @@ elif current_menu == "📝 Dịch Thuật":
         status.update(label=f"✅ Xong trong {time.time()-t0:.0f}s!", state="complete")
 
         result = "\n\n".join(final)
+        # Apply smart quotes
+        # Mở rộng để thay thế cặp "" và ''
+        import re
+        result = re.sub(r'"([^"]*)"', r'“\1”', result)
+        result = re.sub(r"'([^']*)'", r'‘\1’', result)
         save_file(PATHS['output'], result)
         st.session_state['trans_result'] = result
+        st.session_state['_t_out_ver'] = st.session_state.get('_t_out_ver', 0) + 1
         st.balloons()
 
     if 'trans_result' in st.session_state:
         st.divider()
         st.markdown("#### 📤 Kết quả")
-        st.text_area("Bản dịch", st.session_state['trans_result'], height=350, key="t_out")
+        st.text_area("Bản dịch", st.session_state['trans_result'], height=350, key=f"t_out_{st.session_state.get('_t_out_ver', 0)}")
         c1, c2 = st.columns([1, 3])
         with c1:
             st.download_button("⬇️ Tải file", st.session_state['trans_result'],
-                               f"vi_final_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", use_container_width=True)
+                               f"vi_final_{now_gmt7().strftime('%Y%m%d_%H%M')}.txt", use_container_width=True)
         with c2:
             st.info("💾 Đã lưu `output/vi_final.txt` | Bản cũ lưu tại `vi_previous.txt`")
 
 # =================== TAB 2: QC REVIEW ===================
-elif current_menu == "🔍 QC Review":
+with tabs[2]:
     if not client:
         st.warning("⚠️ Cấu hình API Key trước.")
     else:
@@ -910,8 +874,8 @@ elif current_menu == "🔍 QC Review":
             en_lines = en_t.split('\n') if en_t else []
 
             lpc = 50
-            nc = (max(len(vi_lines), len(kr_lines), len(en_lines)) + lpc - 1) // lpc
-            report = [f"# BÁO CÁO QC — {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"]
+            nc = (max(len(vi_lines), len(kr_lines)) + lpc - 1) // lpc
+            report = [f"# BÁO CÁO QC — {now_gmt7().strftime('%d/%m/%Y %H:%M')}\n"]
             new_terms = []
 
             bar = st.progress(0)
@@ -974,7 +938,7 @@ elif current_menu == "🔍 QC Review":
                     st.markdown(st.session_state['new_terms'])
 
 # =================== TAB 3: SO SÁNH (DIFF) ===================
-elif current_menu == "📊 So Sánh":
+with tabs[3]:
     st.markdown("#### 📊 So sánh bản dịch")
     st.caption("So sánh hai phiên bản dịch để thấy sự khác biệt — hữu ích sau khi Re-Refine.")
 
@@ -1024,7 +988,7 @@ elif current_menu == "📊 So Sánh":
             st.session_state['last_diff'] = diff_html
 
 # =================== TAB 4: ĐỐI CHIẾU SIDE-BY-SIDE ===================
-elif current_menu == "📖 Đối Chiếu":
+with tabs[4]:
     st.markdown("#### 📖 Đối chiếu bản dịch với bản gốc")
     st.caption("Hiển thị song song từng dòng bản dịch và bản gốc để bạn tự đối chiếu, rà soát.")
 
@@ -1074,6 +1038,7 @@ elif current_menu == "📖 Đối Chiếu":
         if not sbs_vi:
             st.error("❌ Thiếu bản dịch VI!")
         else:
+            st.session_state['sbs_current_page'] = 1
             st.session_state['sbs_data'] = {
                 'vi': sbs_vi.splitlines(),
                 'en': (sbs_en.splitlines() if sbs_en else []),
@@ -1101,9 +1066,20 @@ elif current_menu == "📖 Đối Chiếu":
         
         def update_sbs_page(key):
             st.session_state['sbs_current_page'] = st.session_state[key]
+            st.session_state['sbs_scroll_top'] = True
 
         page_options = list(range(1, total_pages + 1))
         page_format = lambda x: f"Trang {x} (dòng {(x-1)*lines_per_page+1}~{min(x*lines_per_page, max_lines)})"
+
+        st.markdown('<div id="sbs-top-anchor"></div>', unsafe_allow_html=True)
+        if st.session_state.pop('sbs_scroll_top', False):
+            import streamlit.components.v1 as components
+            components.html(
+                '''<script>
+                    const anchor = window.parent.document.getElementById('sbs-top-anchor');
+                    if(anchor) anchor.scrollIntoView({behavior: 'smooth'});
+                </script>''', height=0
+            )
 
         st.divider()
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -1261,12 +1237,13 @@ elif current_menu == "📖 Đối Chiếu":
                     # Cập nhật state để phản hồi ngay lập tức
                     st.session_state['_sbs_vi_pending'] = full_text
                     st.session_state['trans_result'] = full_text
+                    st.session_state['_sbs_vi_ver'] = st.session_state.get('_sbs_vi_ver', 0) + 1
                     st.rerun()
             with col_info:
                 st.caption(f"Đang sửa dòng {start+1} → {end} / {max_lines}")
 
 # =================== TAB 5: TRUYỆN TRANH ===================
-elif current_menu == "🎨 Truyện Tranh":
+with tabs[5]:
     if not client:
         st.warning("⚠️ Cấu hình API Key trước.")
     else:
@@ -1305,7 +1282,7 @@ elif current_menu == "🎨 Truyện Tranh":
         if sess_choice == "+ TẠO PHIÊN BẢN MỚI":
             # Initialize a stable default name if not exists
             if 'mh_new_sess_def' not in st.session_state:
-                st.session_state['mh_new_sess_def'] = f"Chapter_{datetime.now().strftime('%Y%m%d_%H%M')}"
+                st.session_state['mh_new_sess_def'] = f"Chapter_{now_gmt7().strftime('%Y%m%d_%H%M')}"
                 
             new_sess_name = st.text_input("Tên Chapter mới (Tạo thư mục):", 
                                          value=st.session_state['mh_new_sess_def'],
@@ -1529,7 +1506,7 @@ elif current_menu == "🎨 Truyện Tranh":
                 st.error("Không tìm thấy thư mục ảnh cho phiên bản này.")
 
 # =================== TAB 6: TẢI TRUYỆN ===================
-elif current_menu == "📥 Tải Truyện":
+with tabs[6]:
     st.markdown("#### 📥 Tải ảnh truyện tranh hàng loạt")
     st.caption("Công cụ này sử dụng `gallery-dl` để tự động cào ảnh gốc từ các trang truyện (Naver, Kakao, Webtoons...) về rồi nén thành file ZIP cho bạn.")
     
@@ -1657,7 +1634,7 @@ elif current_menu == "📥 Tải Truyện":
                         pass
 
 # =================== TAB 7: GLOSSARY ===================
-elif current_menu == "📚 Glossary":
+with tabs[7]:
     st.markdown("#### 📚 Quản lý Glossary")
 
     g_tab1, g_tab2, g_tab3 = st.tabs(["📖 Glossary", "📝 Personal Notes", "🔄 Đồng bộ"])
