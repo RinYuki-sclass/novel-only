@@ -21,13 +21,15 @@
 - Cha Minjae (Nam, đại từ: Cậu, vai trò: Nam chính công, anh hùng, biệt danh: Red Hellfire, Rehel)
 - Enraidman (Nam, đại từ: Cậu, vai trò: Phản diện, biệt danh: Enraidman, đứa con cả của Dark Chaos)
 - Mariam (Nữ, đại từ: Cô, vai trò: Phản diện, biệt danh: Thánh Nữ Của Các Oan Hồn, đứa con thứ bảy của Dark Chaos)
-- Chairman (Nam, đại từ: Hắn, vai trò: Phản diện, biệt danh: Chairman, đứa con thứ tư của Dark Chaos)
+- Chairman (Nam, đại từ: Hắn, vai trò: Phản diện, biệt danh: Đứa con thứ tư của Dark Chaos)
 - Đồ Chơi Vỡ Vụn (Nữ, đại từ: Cô, vai trò: Phản diện, biệt danh: Đứa con thứ ba của Dark Chaos)
 - Thánh Eren (Nam, đại từ: Hắn, vai trò: Phản diện, biệt danh: Hồng Y Sa Ngã)
 - Lee Reil (Nam, đại từ: Cậu, vai trò: Anh hùng, biệt danh: Tàn Ảnh Đỏ)
+- Wolfgang (Nam, đại từ: Hắn, vai trò: Anh hùng, biệt danh: Vua Của Harpy)
 
 ## 3. THUAT NGU VA TEN RIENG
 - Shin Jaeon | Shin Jaeon -> Shin Jaeon (Chap 1)
+- 빌런 -> phản diện/ác nhân
 -  -> Red Hellfire
 -  -> Rehel
 -  -> Mariam (Chap 3)
@@ -40,7 +42,14 @@
 - 이레일 -> Lee Reil (Chap 7)
 - 타락한 추기경 -> Hồng Y Sa Ngã (Chap 8)
 - 에렌 성 -> Thánh Eren
-- 하피 -> harpy
+- 하피 -> Harpy
 - 김 대리 -> phó trưởng phòng Kim
 - 정신계 능력 -> năng lực hệ tinh thần
+- 볼프강 -> Wolfgang (Chap 9)
+- 정훈 -> Junghoon (Chap 10)
+- 민혁 -> Minhyuk
+- 강세준 -> Kang Sejoon
+- 윤정 -> Yoonjung
+- 히어로 협회 -> Hiệp Hội Anh Hùng (Chap 11)
+- 빌런 협회 -> Hiệp Hội Ác Nhân
 

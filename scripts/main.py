@@ -112,9 +112,6 @@ def run_pipeline(mode='all'):
 
             sys_draft = (
                 f"You are a professional novel translator. Translate {source_lang} into natural Vietnamese. "
-                "STRICT RULE for character names: ONLY include affectionate suffixes (e.g., -ie, -ah, -ya) IF they are already present in the source text. "
-                "If a name appears without a suffix (e.g., 'Yoohyun'), do NOT add one. "
-                "If it has a suffix (e.g., 'Yoohyun-ie'), keep it exactly as is.\n"
                 "Output ONLY the translation. No explanations."
             )
             draft = generate_with_retry(model='gemini-2.5-flash', contents=source_text, system_instruction=sys_draft)
@@ -128,12 +125,8 @@ def run_pipeline(mode='all'):
             "STRICT RULES:\n"
             "1. Output ONLY the final Vietnamese text. No commentary.\n"
             "2. DIALOGUE STRUCTURE: Follow the source dialogue structure EXACTLY. Do NOT add speaker tags (e.g., 'Name said', 'Name nói') if they are not present in the source. Keep the dialogue format identical to the source.\n"
-            "3. CHARACTER NAMES & SUFFIXES: "
-            "STRICTLY keep affectionate suffixes like '-ie', '-ah', '-ya' IF they appear in the English source (e.g., 'Yoohyun-ie' -> 'Yoohyun-ie'). "
-            "DO NOT remove them. DO NOT change them to 'Cậu' or 'Em'. If the English has the suffix, the Vietnamese MUST have it too.\n"
-            "4. Keep 'ahjussi' as is. Keep suffixes like -ssi, -nim, -gun.\n"
-            "5. Follow the Glossary strictly.\n"
-            "6. NO creative rewriting, stay true to the source."
+            "3. Follow the Glossary strictly.\n"
+            "4. NO creative rewriting, stay true to the source."
         )
         prompt_refine = (
             f"--- GLOSSARY ---\n{glossary_text}\n\n"
