@@ -432,16 +432,16 @@ def generate_with_retry(model, contents, system_instruction, status_w=None, retr
             return ""
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower() or "permission_denied" in err_str.lower() or "403" in err_str:
-                if rotator.total > 1:
-                    new_idx = rotator.rotate(model, reason="429_or_403")
+            if "429" in err_str or "503" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower() or "unavailable" in err_str.lower() or "permission_denied" in err_str.lower() or "403" in err_str:
+                if rotator and rotator.total > 1:
+                    new_idx = rotator.rotate(model, reason="429_503_or_403")
                     if status_w:
-                        status_w.warning(f"⚠️ [{key_label}] Rate limit/Lỗi Key! Chuyển sang Key {new_idx + 1}... (Lần {i+1}/{retries})")
-                    time.sleep(3)
+                        status_w.warning(f"⚠️ [{key_label}] API quá tải/Lỗi Key (503/429)! Chuyển sang Key {new_idx + 1}... (Lần {i+1}/{retries})")
+                    time.sleep(5)
                 else:
                     if status_w:
-                        status_w.warning(f"⚠️ Quá tải API/Lỗi Key. Chờ 65s... (Lần {i+1}/{retries})")
-                    time.sleep(65)
+                        status_w.warning(f"⚠️ Model đang quá tải (503/429). Chờ 60s... (Lần {i+1}/{retries})")
+                    time.sleep(60)
                 continue
             elif "payload" in err_str.lower() or "too large" in err_str.lower() or "400" in err_str:
                 if status_w: status_w.warning(f"⚠️ Ảnh/Dữ liệu quá nặng. Đang thử lại... (Lần {i+1})")
@@ -648,7 +648,7 @@ with st.sidebar:
 # ============================================================
 # MAIN NAVIGATION (Persistent on F5)
 # ============================================================
-MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "📚 Glossary"]
+MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "✨ Edit QT", "📚 Glossary"]
 
 tabs = st.tabs(MENU_ITEMS)
 current_menu = None # Not used
@@ -1633,8 +1633,164 @@ with tabs[6]:
                     except Exception:
                         pass
 
-# =================== TAB 7: GLOSSARY ===================
+# =================== TAB 7: EDIT QT (CONVERT -> VI) ===================
 with tabs[7]:
+    if not client:
+        st.warning("⚠️ Cấu hình API Key trước.")
+    else:
+        st.markdown("#### ✨ Chuyển đổi QT/Convert -> Tiếng Việt chuẩn")
+        st.caption("Biến bản Convert/QT (VietPhrase) thô cứng thành văn phong Tiếng Việt mượt mà, đúng ngữ pháp.")
+
+        qt_input = st.text_area("Văn bản QT/Convert (VietPhrase):", height=300, key="edit_qt_in", placeholder="Dán văn bản QT vào đây...")
+        
+        use_glossary_edit = st.checkbox("Sử dụng Glossary để giữ tên riêng", value=False, key="edit_qt_use_gl")
+        
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            btn_main = st.button("🚀 Bắt đầu biên tập", type="primary", key="edit_qt_btn", use_container_width=True)
+        with col_btn2:
+            if st.session_state.get('edit_qt_active', False):
+                if st.button("🛑 Hủy bỏ", key="edit_qt_stop", use_container_width=True):
+                    st.session_state['edit_qt_active'] = False
+                    st.rerun()
+
+        if btn_main:
+            # Reset dữ liệu để bắt đầu mới
+            if 'edit_qt_temp_parts' in st.session_state:
+                del st.session_state['edit_qt_temp_parts']
+            if 'edit_qt_result' in st.session_state:
+                del st.session_state['edit_qt_result']
+            st.session_state['edit_qt_active'] = True
+            st.rerun()
+
+        # Biến điều khiển retry
+        if st.session_state.get('edit_qt_retry_trigger', False):
+            st.session_state['edit_qt_retry_trigger'] = False
+            st.session_state['edit_qt_active'] = True
+
+        # --- LOGIC XỬ LÝ CHÍNH ---
+        if st.session_state.get('edit_qt_active', False):
+            if not qt_input.strip():
+                st.error("❌ Vui lòng nhập văn bản QT.")
+                st.session_state['edit_qt_active'] = False
+            else:
+                # Sử dụng lite model cho batch lớn để tránh Rate Limit (RPD 500)
+                target_model = "gemini-3.1-flash-lite-preview"
+                log_action("Edit QT", f"QT: {len(qt_input.splitlines())} dòng | Model: {target_model}")
+                
+                glossary = load_file(PATHS['glossary']) if use_glossary_edit else ""
+                lines = [l.strip() for l in qt_input.split('\n') if l.strip()]
+                
+                q_chunk_size = 25 
+                n_chunks = (len(lines) + q_chunk_size - 1) // q_chunk_size
+                
+                # Khởi tạo hoặc kiểm tra tính nhất quán của temp_parts
+                if 'edit_qt_temp_parts' not in st.session_state or len(st.session_state['edit_qt_temp_parts']) != n_chunks:
+                    st.session_state['edit_qt_temp_parts'] = [None] * n_chunks
+                
+                bar = st.progress(0, "Đang xử lý...")
+                status = st.status(f"🚀 Tiến trình biên tập — tổng {n_chunks} phần...", expanded=True)
+                
+                # Hiển thị các phần đã xong trước đó để người dùng an tâm
+                done_indices = [i for i, p in enumerate(st.session_state['edit_qt_temp_parts']) if p is not None]
+                if done_indices:
+                    status.write(f"  ℹ️ Đã có {len(done_indices)}/{n_chunks} phần hoàn thành. Đang bỏ qua và chỉ chạy các phần lỗi...")
+                
+                sys_edit_qt = (
+                    "You are a professional Vietnamese novel editor. "
+                    "Your task is to convert 'QT/Convert' (VietPhrase) text into natural, grammatical, and polished Vietnamese. "
+                    "RULES:\n1. Fix word order and grammar.\n2. Keep terminology from Glossary.\n3. Keep tone/meaning.\n4. Output ONLY Vietnamese."
+                )
+
+                def process_q_chunk(idx):
+                    try:
+                        s, e = idx * q_chunk_size, (idx + 1) * q_chunk_size
+                        chunk_text = "\n\n".join(lines[s:e])
+                        prompt = f"--- GLOSSARY ---\n{glossary}\n\n--- QT SOURCE ---\n{chunk_text}"
+                        res = generate_with_retry(target_model, prompt, sys_edit_qt, None)
+                        if not res:
+                            return idx, None, "API returned empty (maybe blocked or quota)"
+                        clines = res.strip().split('\n')
+                        clean = [cl for cl in clines if not cl.startswith(('*', 'Đây là', 'Bản dịch', 'Đã sửa'))]
+                        final_v = "\n".join(clean).strip()
+                        return idx, (final_v if final_v else None), ("Filtered to empty" if not final_v else None)
+                    except Exception as e:
+                        return idx, None, str(e)
+
+                import concurrent.futures
+                import time
+                t0 = time.time()
+                
+                pending_indices = [i for i, p in enumerate(st.session_state['edit_qt_temp_parts']) if p is None]
+                
+                if not pending_indices:
+                    st.success("Tất cả các phần đã hoàn thành!")
+                else:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        # Map index to future
+                        future_to_idx = {executor.submit(process_q_chunk, i): i for i in pending_indices}
+                        
+                        for future in concurrent.futures.as_completed(future_to_idx):
+                            idx = future_to_idx[future]
+                            try:
+                                _, text, err = future.result()
+                                if text:
+                                    st.session_state['edit_qt_temp_parts'][idx] = text
+                                    completed = sum(1 for p in st.session_state['edit_qt_temp_parts'] if p is not None)
+                                    bar.progress(completed / n_chunks, f"Xong {completed}/{n_chunks}...")
+                                    status.write(f"  ✅ Phần {idx+1}: Thành công")
+                                else:
+                                    status.write(f"  ❌ Phần {idx+1}: {err or 'API Error'}")
+                            except Exception as e:
+                                status.write(f"  ❌ Phần {idx+1}: Lỗi - {str(e)[:100]}")
+
+                # Kiểm tra lại tổng thể
+                all_done = all(p is not None for p in st.session_state['edit_qt_temp_parts'])
+                
+                if all_done:
+                    result_vi = "\n\n".join(st.session_state['edit_qt_temp_parts'])
+                    st.session_state['edit_qt_result'] = result_vi
+                    st.session_state['_eqt_ver'] = st.session_state.get('_eqt_ver', 0) + 1
+                    # Tắt các cờ để thoát khỏi Loop
+                    st.session_state['edit_qt_active'] = False
+                    st.session_state['edit_qt_retry_trigger'] = False
+                    del st.session_state['edit_qt_temp_parts']
+                    status.update(label=f"✅ Hoàn tất toàn bộ {n_chunks} phần!", state="complete")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    failed_count = sum(1 for p in st.session_state['edit_qt_temp_parts'] if p is None)
+                    status.update(label=f"⚠️ Còn {failed_count} phần chưa hoàn thành.", state="error")
+                    st.warning(f"Quá trình biên tập chưa hoàn tất 100%. Bạn có thể nhấn 'Thử lại' để chạy tiếp các phần lỗi.")
+                    if st.button("🔄 Thử lại các phần lỗi", key="eqt_retry_btn"):
+                        st.rerun()
+
+                result_vi = "\n\n".join([p for p in st.session_state['edit_qt_temp_parts'] if p])
+                
+                if result_vi:
+                    st.session_state['edit_qt_result'] = result_vi
+                    st.session_state['_eqt_ver'] = st.session_state.get('_eqt_ver', 0) + 1
+                    status.update(label=f"✅ Đã biên tập xong!", state="complete")
+                else:
+                    st.error("❌ Biên tập thất bại hoặc không có kết quả.")
+        
+        # --- HIỂN THỊ KẾT QUẢ TẠM THỜI (BACKUP) NẾU LỖI ---
+        if 'edit_qt_temp_parts' in st.session_state and any(st.session_state['edit_qt_temp_parts']):
+            with st.expander("⚠️ Dữ liệu Backup (Phòng trường hợp lỗi/gián đoạn)"):
+                backup_text = "\n\n".join([p for p in st.session_state['edit_qt_temp_parts'] if p])
+                st.text_area("Bản dịch đã hoàn thành một phần:", backup_text, height=300, key="eqt_backup_view")
+                st.download_button("⬇️ Tải bản backup này", backup_text, f"backup_edit_qt_{int(time.time())}.txt")
+
+        if 'edit_qt_result' in st.session_state:
+            st.divider()
+            st.markdown("#### 📤 Kết quả Tiếng Việt chuẩn")
+            # Sử dụng versioned key để force refresh nội dung text_area
+            eqt_ver = st.session_state.get('_eqt_ver', 0)
+            st.text_area("Bản dịch mượt", st.session_state['edit_qt_result'], height=400, key=f"edit_qt_out_{eqt_ver}")
+            st.download_button("⬇️ Tải bản dịch", st.session_state['edit_qt_result'], f"vi_edit_{int(time.time())}.txt")
+
+# =================== TAB 8: GLOSSARY ===================
+with tabs[8]:
     st.markdown("#### 📚 Quản lý Glossary")
 
     g_tab1, g_tab2, g_tab3 = st.tabs(["📖 Glossary", "📝 Personal Notes", "🔄 Đồng bộ"])
