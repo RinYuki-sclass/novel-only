@@ -1,2 +1,0 @@
-# Personal Translation Notes
-- Dù vài nhân vật tự xưng là con của Dark Chaos, nhưng mối quan hệ này giống với 1 giáo phái gồm Dark Chaos đứng đầu và các tín đồ cuồng tín đi theo sau. Không có quan hệ huyết thống thực sự.

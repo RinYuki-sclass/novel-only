@@ -155,9 +155,29 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Static configuration for Chinese translation - devs can fill/customize here
+ZH_PROMPT_CONFIG = """
+Dưới đây là quy định xưng hô và tên nhân vật cho bản dịch tiếng Trung -> tiếng Việt:
+- Cách xưng hô:
+  + Truyện đam mỹ nên cặp đôi chính là nam nam.
+  + Nhân vật chính là Ôn Mộ Ngôn.
+  + Ngôi kể là ngôi thứ ba (vẫn gọi tên hoặc dùng các đại từ là "anh").
+- Chuyển đổi tên riêng (Hán Việt):
+  + 温慕言 → Ôn Mộ Ngôn
+  + 兰漾 → Lan Dạng
+- BẢNG XƯNG HÔ HỘI THOẠI (QUY ĐỊNH CẶP ĐÔI):
+  + [Ôn Mộ Ngôn] nói chuyện với [Lan Dạng]: [Ôn Mộ Ngôn] xưng là "tôi" - gọi [Lan Dạng] là "cậu".
+  + [Lan Dạng] nói chuyện với [Ôn Mộ Ngôn]: [Lan Dạng] xưng là "tôi" - gọi [Ôn Mộ Ngôn] là "anh".
+- GÓC NHÌN DẪN TRUYỆN (NARRATION POV - Ngôi thứ 3 từ góc nhìn của Ôn Mộ Ngôn):
+  + Mô tả suy nghĩ, nội tâm của Ôn Mộ Ngôn: Dùng ngôi thứ 3, xưng "anh" khi nhắc đến Ôn Mộ Ngôn, xưng "hắn" khi nhắc đến Lan Dạng.
+"""
+
+STATE_FILE = os.path.join(BASE_DIR, 'output', 'cn_to_vi_state.json')
+
 PATHS = {
     'eng_trans': os.path.join(BASE_DIR, 'input', 'trans', 'eng.txt'),
     'kor_trans': os.path.join(BASE_DIR, 'input', 'trans', 'kor.txt'),
+    'zh_trans': os.path.join(BASE_DIR, 'input', 'trans', 'zh.txt'),
     'vi_qc': os.path.join(BASE_DIR, 'input', 'qc', 'vi_to_qc.txt'),
     'kor_qc': os.path.join(BASE_DIR, 'input', 'qc', 'kor.txt'),
     'eng_qc': os.path.join(BASE_DIR, 'input', 'qc', 'eng.txt'),
@@ -165,6 +185,7 @@ PATHS = {
     'notes': os.path.join(BASE_DIR, 'glossary', 'personal_notes.md'),
     'output': os.path.join(BASE_DIR, 'output', 'vi_final.txt'),
     'output_prev': os.path.join(BASE_DIR, 'output', 'vi_previous.txt'),
+    'cn_to_vi': os.path.join(BASE_DIR, 'output', 'cn_to_vi.txt'),
     'qc_report': os.path.join(BASE_DIR, 'output', 'qc_report.txt'),
     'new_terms': os.path.join(BASE_DIR, 'output', 'new_glossary_terms.txt'),
 }
@@ -488,6 +509,13 @@ def optimize_image_for_api(img, max_dimension=2048):
     optimized_img = PIL.Image.open(img_byte_arr)
     return optimized_img
 
+def trigger_scroll_to_bottom():
+    import streamlit.components.v1 as components
+    components.html(
+        "<script>window.parent.scrollTo({ top: window.parent.document.body.scrollHeight, behavior: 'smooth' });</script>",
+        height=0
+    )
+
 def render_diff_html(text1, text2):
     """Render unified diff as colored HTML."""
     lines1 = text1.splitlines()
@@ -648,7 +676,7 @@ with st.sidebar:
 # ============================================================
 # MAIN NAVIGATION (Persistent on F5)
 # ============================================================
-MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🔍 QC Review", "📊 So Sánh", "📖 Đối Chiếu", "🎨 Truyện Tranh", "📥 Tải Truyện", "✨ Edit QT", "📚 Glossary"]
+MENU_ITEMS = ["🏠 Hướng dẫn", "📝 Dịch Thuật", "🇨🇳 Dịch Trung-Việt", "📊 So Sánh", "📖 Đối Chiếu", "✨ Edit QT", "📚 Glossary"]
 
 tabs = st.tabs(MENU_ITEMS)
 current_menu = None # Not used
@@ -663,7 +691,7 @@ if 'session_logged' not in st.session_state:
 with tabs[0]:
     st.markdown("""
     ## Chào mừng bạn đến với **Trans-Tool** 👋  
-    *Công cụ hỗ trợ Dịch thuật, Kiểm duyệt QC và Quét Truyện Tranh thông minh tích hợp AI cực mạnh do Team xây dựng.*
+    *Công cụ hỗ trợ Dịch thuật tiểu thuyết thông minh tích hợp AI cực mạnh do Team xây dựng.*
 
     Dưới đây là cẩm nang nhanh để bạn nắm rõ các chức năng và cách vận hành:
 
@@ -671,23 +699,24 @@ with tabs[0]:
 
     ### 🧩 Các Tính Năng Cốt Lõi
 
-    #### **1. 📝 Dịch Thuật (Bám sát Source Eng & Hàn)**  
+    #### **1. 📝 Dịch Thuật EN/KR (Bám sát Source Eng & Hàn)**  
     - AI nhận song song **Tiếng Anh (EN)** và **Tiếng Hàn (KR)** để cho ra bản dịch Tiếng Việt chuẩn xác nhất.
     - AI tuân thủ nghiêm ngặt từ điển thuật ngữ (`Glossary`) và các ghi chú dịch thuật riêng (`Notes`).
     - Tính năng **Re-Refine** hữu ích khi bạn đã có 1 bản dịch từ trước mà chỉ muốn AI sửa lại cấu trúc/văn phong, giúp tiết kiệm chi phí! 
 
-    #### **2. 🔍 QC Review (Trợ lý bắt lỗi tinh vi)**
-    - Ném cho AI bản dịch Tiếng Việt của bạn cùng với bản gốc. AI sẽ chỉ ra cụ thể: *Dòng nào sai sót, sai ý nghĩa, sai tên nhân vật hay bỏ sót hậu tố?*
-    - **QC** cực kỳ khắt khe: Sẽ liên tục check chéo với Glossary của nhóm.
-    - Đồng thời nó cũng tự động nhặt ra các **"Thuật ngữ mới"** chưa có trong từ điển để báo cáo cho Lead cập nhật!
+    #### **2. 🇨🇳 Dịch Trung-Việt (Tiếng Trung Giản Thể)**  
+    - Dịch văn bản tiếng Trung Giản Thể sang Tiếng Việt.
+    - Hỗ trợ lưu trữ tiến trình thông minh: dịch theo từng phần, F5 không mất dữ liệu và hỗ trợ dịch lại chỉ các phần bị lỗi.
+    - Cấu hình tĩnh `ZH_PROMPT_CONFIG` giúp quy định cách xưng hô và dịch tên nhân vật nhất quán và dễ dàng tùy chỉnh bởi nhà phát triển.
 
-    #### **3. 🎨 Dịch Truyện Tranh (Manhwa Translator)**
-    - Quét và trích xuất chữ Hàn từ bong bóng thoại trong hình ảnh, sau đó dịch trực tiếp sang Tiếng Việt.
-    - Chữ thoại sẽ được sắp xếp và dịch gọn gàng, liền mạch theo chuẩn khung tranh! Rất tiết kiệm công sức gõ text.
+    #### **3. 📊 So Sánh (Diff View)**
+    - So sánh hai phiên bản dịch cũ và mới để thấy rõ sự khác biệt (thêm, xóa, sửa), rất hữu ích sau khi Re-Refine hoặc cập nhật bản dịch mới.
 
     #### **4. 📖 Đối Chiếu (Side-by-Side Review)**
-    - Hỗ trợ dàn trang **Bản Dịch Tiếng Việt** nằm CẠNH **Bản Dịch Tiếng Anh/Hàn** để Edit/QC tự soát.
-    - *Có tích hợp Highlight màu* cho những từ ngữ thuộc phạm vi Glossary, giúp bạn soi lỗi thuật ngữ siêu dễ.
+    - Hỗ trợ dàn trang **Bản Dịch Tiếng Việt** nằm CẠNH **Bản Dịch Gốc** để dễ dàng đối chiếu, rà soát. Tích hợp bôi sáng thuật ngữ (Highlight) từ Glossary.
+
+    #### **5. ✨ Edit QT (Convert to VI)**
+    - Chuyển đổi văn bản Convert/QT (VietPhrase) thô cứng thành văn phong Việt mượt mà, tự nhiên và đúng ngữ pháp.
 
     ---
 
@@ -810,6 +839,7 @@ with tabs[1]:
                     status.write(f"  ✅ Phần {idx+1} đã xong!")
                 except Exception as e:
                     status.write(f"  ❌ Lỗi ở một phần: {e}")
+                trigger_scroll_to_bottom()
 
         bar.progress(1.0, "✅ Hoàn tất!")
         status.update(label=f"✅ Xong trong {time.time()-t0:.0f}s!", state="complete")
@@ -837,105 +867,236 @@ with tabs[1]:
             st.info("💾 Đã lưu `output/vi_final.txt` | Bản cũ lưu tại `vi_previous.txt`")
 
 # =================== TAB 2: QC REVIEW ===================
+# =================== TAB 2: DỊCH TRUNG-VIỆT ===================
 with tabs[2]:
     if not client:
-        st.warning("⚠️ Cấu hình API Key trước.")
-    else:
-        st.markdown("#### 📥 Dữ liệu QC")
-        qsrc_opts = ["📋 Paste"] if HIDE_LOCAL_FILE_OPTION else ["📂 File (input/qc/)", "📋 Paste"]
-        qsrc_idx = 0 if len(qsrc_opts) == 1 else 1
-        qsrc = st.radio("Nguồn:", qsrc_opts, index=qsrc_idx, horizontal=True, key="q_src")
+        st.warning("⚠️ Cấu hình API Key trong `.env` trước.")
+        st.stop()
 
-        if not qsrc.startswith("📋"):
-            vi_t = load_file(PATHS['vi_qc'])
-            kr_t = load_file(PATHS['kor_qc'])
-            en_t = load_file(PATHS['eng_qc'])
-            st.info(f"VI: {len(vi_t.splitlines())} dòng | KR: {len(kr_t.splitlines())} | EN: {len(en_t.splitlines())}")
+    def load_zh_state():
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+
+    def save_zh_state(state):
+        try:
+            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+            with open(STATE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def delete_zh_state():
+        try:
+            if os.path.exists(STATE_FILE):
+                os.remove(STATE_FILE)
+        except Exception:
+            pass
+
+    st.markdown("#### 🇨🇳 Dịch thuật Tiếng Trung Giản Thể -> Tiếng Việt")
+    
+    zh_state = load_zh_state()
+
+    if zh_state is not None:
+        source_text = zh_state.get("source_text", "")
+        chunk_size_val = zh_state.get("chunk_size", chunk_size)
+        paragraphs = zh_state.get("paragraphs", [])
+        translated_chunks = zh_state.get("translated_chunks", {})
+        n_chunks = len(translated_chunks)
+        
+        st.info("🔄 Đang có tiến trình dịch dở dang trên hệ thống.")
+        
+        st.text_area("Văn bản tiếng Trung Giản Thể (Đang dịch)", value=source_text, height=220, disabled=True)
+        
+        completed = sum(1 for v in translated_chunks.values() if v is not None)
+        pct = completed / n_chunks if n_chunks > 0 else 0
+        st.progress(pct, f"Đã hoàn thành {completed}/{n_chunks} phần...")
+        
+        failed_indices = [int(k) for k, v in translated_chunks.items() if v is None]
+        
+        if failed_indices:
+            st.warning(f"⚠️ Có {len(failed_indices)}/{n_chunks} phần chưa hoàn thành hoặc bị lỗi.")
         else:
-            vi_t = st.text_area("Bản dịch VI", height=200, key="q_vi")
-            c1, c2 = st.columns(2)
-            with c1: kr_t = st.text_area("Tiếng Hàn", height=200, key="q_kr")
-            with c2: en_t = st.text_area("Tiếng Anh (tùy chọn)", height=200, key="q_en")
-
-        if st.button("🔍 Chạy QC", type="primary"):
-            target_model = "gemini-2.5-flash"
-            log_action("QC Review", f"VI: {len((vi_t or '').splitlines())} dòng | KR: {len((kr_t or '').splitlines())} dòng | Model: AUTO")
-            if not vi_t.strip():
-                st.error("❌ Thiếu Bản dịch VI để đối chiếu!")
-                st.stop()
-            if not kr_t.strip() and not en_t.strip():
-                st.error("❌ Cần ít nhất một ngôn ngữ nguồn (KR hoặc EN) để đối chiếu!")
-                st.stop()
-
+            st.success("🎉 Tất cả các phần đã được dịch thành công! Đang tự động lưu kết quả...")
+            
+        c1, c2 = st.columns(2)
+        with c1:
+            run_lbl = "🚀 Tiếp tục dịch (Dịch các phần chưa hoàn thành / lỗi)" if failed_indices else "🚀 Biên dịch lại toàn bộ"
+            if st.button(run_lbl, type="primary", use_container_width=True):
+                st.session_state['zh_translating'] = True
+                st.rerun()
+        with c2:
+            if st.button("🆕 Xóa tiến trình & Dịch mới", use_container_width=True):
+                delete_zh_state()
+                if 'zh_translating' in st.session_state:
+                    del st.session_state['zh_translating']
+                if 'zh_trans_result' in st.session_state:
+                    del st.session_state['zh_trans_result']
+                st.rerun()
+                
+        # Run translation loop if active
+        if st.session_state.get('zh_translating', False):
+            # If not failed_indices, they clicked "Biên dịch lại toàn bộ", reset
+            if not failed_indices:
+                translated_chunks = {str(i): None for i in range(n_chunks)}
+                zh_state['translated_chunks'] = translated_chunks
+                save_zh_state(zh_state)
+                failed_indices = list(range(n_chunks))
+                
             glossary = load_file(PATHS['glossary'])
             notes = load_file(PATHS['notes'])
-            vi_lines = vi_t.split('\n')
-            kr_lines = kr_t.split('\n')
-            en_lines = en_t.split('\n') if en_t else []
+            
+            bar = st.progress(completed / n_chunks if n_chunks > 0 else 0, "Đang khởi chạy dịch...")
+            status = st.status(f"🚀 Tiến trình dịch Trung-Việt — {n_chunks} phần...", expanded=True)
+            t0 = time.time()
+            
+            def process_zh_chunk(idx):
+                try:
+                    s, e = idx * chunk_size_val, (idx + 1) * chunk_size_val
+                    chunk_text = "\n\n".join(paragraphs[s:e])
+                    
+                    # Context Aware: get last 2 paragraphs from previous chunk
+                    prev_zh = ""
+                    if idx > 0:
+                        prev_s = max(0, (idx - 1) * chunk_size_val)
+                        prev_zh = "\n".join(paragraphs[prev_s:s][-2:])
+                    
+                    sys_instruction = (
+                        "You are a professional Chinese-to-Vietnamese novel translator. Translate Simplified Chinese (tiếng Trung giản thể) into natural, fluent Vietnamese. "
+                        "STRICT RULES:\n"
+                        "1. Output ONLY the translated Vietnamese text. Do NOT include any explanations, annotations, or original Chinese text.\n"
+                        "2. Keep dialogue format and punctuation consistent with the source.\n"
+                        "3. Follow the names, terminology, and forms of address (xưng hô) specified in the config and glossary."
+                    )
+                    
+                    context_str = f"--- PREVIOUS CONTEXT (DO NOT TRANSLATE, for reference only) ---\n{prev_zh}\n\n" if prev_zh else ""
+                    prompt = (
+                        f"--- CONFIG & RULES (Forms of address & names) ---\n{ZH_PROMPT_CONFIG}\n\n"
+                        f"--- GLOSSARY ---\n{glossary}\n\n"
+                        f"--- NOTES ---\n{notes}\n\n"
+                        f"{context_str}"
+                        f"--- CHINESE SOURCE TO TRANSLATE ---\n{chunk_text}"
+                    )
+                    
+                    target_model = "gemini-3-flash-preview"
+                    res = generate_with_retry(target_model, prompt, sys_instruction, None)
+                    if not res:
+                        return idx, None, "API returned empty (maybe blocked/quota)"
+                    lines = res.strip().split('\n')
+                    clean = [l for l in lines if not l.startswith(('*', 'Đây là', 'Bản dịch', 'Tuyệt vời', 'Đã sửa'))]
+                    final_v = "\n".join(clean).strip()
+                    if not final_v:
+                        return idx, None, "Empty text after filtering commentary"
+                    return idx, final_v, None
+                except Exception as e:
+                    return idx, None, str(e)
+            
+            import concurrent.futures
+            # Only run for failed/pending chunks
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(process_zh_chunk, idx): idx for idx in failed_indices}
+                for future in concurrent.futures.as_completed(futures):
+                    idx = futures[future]
+                    try:
+                        _, text, err = future.result()
+                        if text:
+                            translated_chunks[str(idx)] = text
+                            zh_state['translated_chunks'] = translated_chunks
+                            save_zh_state(zh_state)
+                            completed = sum(1 for v in translated_chunks.values() if v is not None)
+                            bar.progress(completed / n_chunks, f"Hoàn thành {completed}/{n_chunks} phần...")
+                            status.write(f"  ✅ Phần {idx+1} đã dịch xong!")
+                        else:
+                            status.write(f"  ❌ Phần {idx+1} thất bại: {err or 'Lỗi không rõ'}")
+                    except Exception as e:
+                        status.write(f"  ❌ Lỗi ở phần {idx+1}: {e}")
+                    trigger_scroll_to_bottom()
+            
+            bar.progress(1.0, "✅ Đã dịch xong lượt này!")
+            
+            # Check if all completed now
+            all_done = all(v is not None for v in translated_chunks.values())
+            if all_done:
+                status.update(label=f"✅ Hoàn tất toàn bộ {n_chunks} phần trong {time.time()-t0:.0f}s!", state="complete")
+                # Compile final output
+                final_result = "\n\n".join(translated_chunks[str(i)] for i in range(n_chunks))
+                import re
+                final_result = re.sub(r'"([^"]*)"', r'“\1”', final_result)
+                final_result = re.sub(r"'([^']*)'", r'‘\1’', final_result)
+                
+                # Backup output
+                prev = load_file(PATHS['output'])
+                if prev:
+                    save_file(PATHS['output_prev'], prev)
+                    
+                # Save to both paths
+                save_file(PATHS['cn_to_vi'], final_result)
+                save_file(PATHS['output'], final_result)
+                
+                # Save to session_state so other tabs see it immediately
+                st.session_state['zh_trans_result'] = final_result
+                st.session_state['trans_result'] = final_result
+                st.session_state['_zh_out_ver'] = st.session_state.get('_zh_out_ver', 0) + 1
+                st.session_state['_t_out_ver'] = st.session_state.get('_t_out_ver', 0) + 1
+                
+                delete_zh_state()
+                if 'zh_translating' in st.session_state:
+                    del st.session_state['zh_translating']
+                st.balloons()
+                st.rerun()
+            else:
+                st.session_state['zh_translating'] = False
+                status.update(label="⚠️ Quá trình dịch bị gián đoạn hoặc có phần bị lỗi. Vui lòng bấm 'Tiếp tục dịch' để dịch lại các phần lỗi.", state="error")
+                st.rerun()
 
-            lpc = 50
-            nc = (max(len(vi_lines), len(kr_lines)) + lpc - 1) // lpc
-            report = [f"# BÁO CÁO QC — {now_gmt7().strftime('%d/%m/%Y %H:%M')}\n"]
-            new_terms = []
+    else:
+        # Standard input interface for new translation
+        st.markdown("##### 📥 Dữ liệu đầu vào (Tiếng Trung Giản Thể)")
+        zh_src_opts = ["📋 Paste"] if HIDE_LOCAL_FILE_OPTION else ["📂 File có sẵn (input/trans/zh.txt)", "📋 Paste"]
+        zh_src_idx = 0 if len(zh_src_opts) == 1 else 1
+        zh_src_choice = st.radio("Nguồn:", zh_src_opts, index=zh_src_idx, horizontal=True, key="zh_src_choice")
+        
+        if not zh_src_choice.startswith("📋"):
+            zh_text = load_file(PATHS['zh_trans'])
+            st.info(f"ZH (zh.txt): {len(zh_text.splitlines())} dòng" if zh_text else "⚠️ Chưa có file `input/trans/zh.txt`")
+        else:
+            zh_text = st.text_area("Dán văn bản tiếng Trung Giản Thể", height=300, key="zh_text_area", placeholder="Dán văn bản tiếng Trung cần dịch vào đây (Hỗ trợ tới 5000 dòng)...")
+            
+        if st.button("🚀 Bắt đầu dịch Trung-Việt", type="primary", use_container_width=True):
+            if not zh_text.strip():
+                st.error("❌ Vui lòng nhập hoặc cấu hình file văn bản tiếng Trung cần dịch!")
+            else:
+                paragraphs = [p.strip() for p in zh_text.split('\n') if p.strip()]
+                n_chunks = (len(paragraphs) + chunk_size - 1) // chunk_size
+                
+                # Save new state
+                new_state = {
+                    "source_text": zh_text,
+                    "chunk_size": chunk_size,
+                    "paragraphs": paragraphs,
+                    "translated_chunks": {str(i): None for i in range(n_chunks)}
+                }
+                save_zh_state(new_state)
+                st.session_state['zh_translating'] = True
+                st.rerun()
 
-            bar = st.progress(0)
-            status = st.status(f"🔍 QC — {nc} phần", expanded=True)
-
-            for i in range(nc):
-                si, ei = i*lpc, (i+1)*lpc
-                bar.progress(i/nc, f"Phần {i+1}/{nc}...")
-                status.write(f"📋 Phần {i+1}/{nc} — dòng {si+1}~{min(ei, len(vi_lines))}")
-
-                vi_chunk = ""
-                for idx, ln in enumerate(vi_lines[si:ei], start=si+1):
-                    vi_chunk += f"{idx}: {ln}\n"
-                kr_chunk = "\n".join(kr_lines[si:ei])
-                en_ref = ""
-                if en_lines:
-                    en_ref = f"==== EN ====\n{chr(10).join(en_lines[si:ei])}\n\n"
-
-                pqc = (
-                    f"==== GLOSSARY ====\n{glossary}\n\n==== NOTES ====\n{notes}\n\n"
-                    "==== TASK ====\nCompare VI translation with sources. Report by line number.\n"
-                    "Format: ### Dòng [N]:\n- [Lỗi]: \"quote\" - reason\n- [Gợi ý]: fix\n\n"
-                    f"==== KR ====\n{kr_chunk}\n\n{en_ref}==== VI ====\n{vi_chunk}"
-                )
-                rc = generate_with_retry(target_model, pqc, "Professional QC Editor.", status)
-                if rc and rc.strip():
-                    report.append(rc)
-                    status.write(f"  ⚠️ Lỗi ở phần {i+1}")
-                else:
-                    status.write(f"  ✅ Phần {i+1} OK")
-
-                # Extract new terms
-                pe = (
-                    f"Find terms in SOURCE not in GLOSSARY.\n==== GLOSSARY ====\n{glossary}\n{notes}\n\n"
-                    f"==== SOURCE ====\n{kr_chunk}\n\nFormat: - [Term]: [Translation]"
-                )
-                ec = generate_with_retry(target_model, pe, "Glossary Extractor.", status)
-                if ec and ec.strip(): new_terms.append(ec.strip())
-                time.sleep(2)
-
-            bar.progress(1.0, "✅ QC xong!")
-            status.update(label="✅ QC Hoàn tất!", state="complete")
-
-            rpt = "\n".join([str(r) for r in report if r])
-            save_file(PATHS['qc_report'], rpt)
-            st.session_state['qc_report'] = rpt
-
-            if new_terms:
-                nt = "\n".join(list(set(new_terms)))
-                save_file(PATHS['new_terms'], nt)
-                st.session_state['new_terms'] = nt
-
-        if 'qc_report' in st.session_state:
-            st.divider()
-            st.markdown("#### 📋 Báo cáo QC")
-            st.markdown(st.session_state['qc_report'])
-            st.download_button("⬇️ Tải báo cáo", st.session_state['qc_report'], "qc_report.txt")
-            if 'new_terms' in st.session_state:
-                with st.expander("✨ Thuật ngữ mới gợi ý"):
-                    st.markdown(st.session_state['new_terms'])
+    # Display final result if exists
+    # If the file exists, we can show it so they can always view/download the last translated novel chapter
+    last_compiled = load_file(PATHS['cn_to_vi'])
+    if last_compiled:
+        st.divider()
+        st.markdown("#### 📤 Kết quả dịch gần nhất (cn_to_vi.txt)")
+        st.text_area("Bản dịch tiếng Việt hoàn chỉnh", last_compiled, height=350, key=f"zh_out_view_{st.session_state.get('_zh_out_ver', 0)}")
+        c_dl1, c_dl2 = st.columns([1, 3])
+        with c_dl1:
+            st.download_button("⬇️ Tải file", last_compiled,
+                               f"vi_chinese_{now_gmt7().strftime('%Y%m%d_%H%M')}.txt", use_container_width=True)
+        with c_dl2:
+            st.success("💾 Đã lưu tại `output/cn_to_vi.txt` và `output/vi_final.txt` | Sẵn sàng để So Sánh/Đối Chiếu!")
 
 # =================== TAB 3: SO SÁNH (DIFF) ===================
 with tabs[3]:
@@ -1242,399 +1403,8 @@ with tabs[4]:
             with col_info:
                 st.caption(f"Đang sửa dòng {start+1} → {end} / {max_lines}")
 
-# =================== TAB 5: TRUYỆN TRANH ===================
+# =================== TAB 5: EDIT QT (CONVERT -> VI) ===================
 with tabs[5]:
-    if not client:
-        st.warning("⚠️ Cấu hình API Key trước.")
-    else:
-        st.markdown("#### 🎨 Dịch Truyện Tranh (Manhwa Translator)")
-        st.caption("Tải lên các ảnh của chapter. AI sẽ nhìn ảnh, nhận diện bong bóng thoại (OCR Hàn) và dịch sang tiếng Việt.")
-        
-        mh_hist_dir = os.path.join(BASE_DIR, 'output', 'manhwa_history')
-        os.makedirs(mh_hist_dir, exist_ok=True)
-        
-        sessions = sorted([d for d in os.listdir(mh_hist_dir) if os.path.isdir(os.path.join(mh_hist_dir, d))], reverse=True)
-        
-        st.divider()
-        c_sess1, c_sess2 = st.columns([3, 1])
-        with c_sess1:
-            opts = ["+ TẠO PHIÊN BẢN MỚI"] + sessions
-            # Retrieve default index from session_state if it exists
-            default_ix = 0
-            if 'current_mh_sess' in st.session_state and st.session_state['current_mh_sess'] in opts:
-                default_ix = opts.index(st.session_state['current_mh_sess'])
-                
-            sess_choice = st.selectbox("📂 Chọn Chapter / Phiên bản đã lưu:", opts, index=default_ix)
-            # Update state with current choice immediately so we remember it
-            st.session_state['current_mh_sess'] = sess_choice
-            
-        with c_sess2:
-            st.write(" ")
-            if sess_choice != "+ TẠO PHIÊN BẢN MỚI":
-                if st.button("🗑️ Xóa Lịch sử này", use_container_width=True):
-                    import shutil
-                    shutil.rmtree(os.path.join(mh_hist_dir, sess_choice))
-                    st.success("✅ Đã xóa!")
-                    st.rerun()
-
-        st.divider()
-
-        if sess_choice == "+ TẠO PHIÊN BẢN MỚI":
-            # Initialize a stable default name if not exists
-            if 'mh_new_sess_def' not in st.session_state:
-                st.session_state['mh_new_sess_def'] = f"Chapter_{now_gmt7().strftime('%Y%m%d_%H%M')}"
-                
-            new_sess_name = st.text_input("Tên Chapter mới (Tạo thư mục):", 
-                                         value=st.session_state['mh_new_sess_def'],
-                                         key="mh_new_sess_input")
-            
-            # Use the user's input from the widget key to be safe
-            final_sess_name = st.session_state["mh_new_sess_input"].strip().replace('/', '-').replace('\\', '-')
-            if not final_sess_name:
-                final_sess_name = st.session_state['mh_new_sess_def']
-            
-            uploaded_files = st.file_uploader("🖼️ Chọn ảnh truyện tranh (JPG, PNG, WEBP)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
-            stitch_mh = st.checkbox("🧩 Tự động nối dải ảnh trước khi dịch", value=True, help="Nếu ảnh bị cắt ngắn, ghép chúng lại thành dải dài (Stitching) sẽ giúp AI đọc chuẩn xác không bị đứt câu.")
-            
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                st.info("Trình thông dịch AI: AUTO 🤖")
-            with c2:
-                process_btn = st.button("🚀 Bắt đầu Quét & Dịch", type="primary", use_container_width=True)
-
-            if process_btn and uploaded_files:
-                target_model = "gemini-2.5-flash-lite"
-                log_action("Truyện Tranh", f"Ảnh: {len(uploaded_files)} | Session: {final_sess_name} | Model: AUTO")
-                import PIL.Image
-                
-                # --- STITCHING PRE-PROCESSING ---
-                files_to_process = []
-                if stitch_mh and len(uploaded_files) > 1:
-                    status_stitch = st.status("🧩 Đang phân tích và ghép nối ảnh...", expanded=True)
-                    # Sắp xếp thứ tự tự nhiên (Natural Sort) + xử lý Windows Duplicate (VD: ảnh (1) xếp sau ảnh gốc)
-                    uploaded_files = sorted(uploaded_files, key=lambda x: get_windows_sort_key(x.name))
-                    images = []
-                    for uf in uploaded_files:
-                        try:
-                            im = PIL.Image.open(uf).convert('RGB')
-                            images.append((uf.name, im))
-                        except Exception:
-                            pass
-                    
-                    if images:
-                        stitched_chunks = []
-                        current_chunk = []
-                        current_h = 0
-                        current_w = 0
-                        MAX_HEIGHT = 15000
-                        
-                        for f, img in images:
-                            if current_h + img.height > MAX_HEIGHT and current_chunk:
-                                stitched_chunks.append((current_chunk, current_w, current_h))
-                                current_chunk = [(f, img)]
-                                current_h = img.height
-                                current_w = img.width
-                            else:
-                                current_chunk.append((f, img))
-                                current_h += img.height
-                                current_w = max(current_w, img.width)
-                                
-                        if current_chunk:
-                            stitched_chunks.append((current_chunk, current_w, current_h))
-                            
-                        class StitchedImg:
-                            def __init__(self, name, img):
-                                self.name = name
-                                self.img = img
-                                
-                        for i, (chunk, w, h) in enumerate(stitched_chunks):
-                            canvas = PIL.Image.new('RGB', (w, h), (255, 255, 255))
-                            y_offset = 0
-                            for f, img in chunk:
-                                x_offset = (w - img.width) // 2
-                                canvas.paste(img, (x_offset, y_offset))
-                                y_offset += img.height
-                            
-                            fname = f"stitched_{i+1:03d}.jpg"
-                            files_to_process.append(StitchedImg(fname, canvas))
-                        
-                        status_stitch.update(label=f"✅ Nối ảnh xong! (Ghép thành {len(files_to_process)} dải dài)", state="complete")
-                
-                if not files_to_process:
-                    class RawImg:
-                        def __init__(self, name, uf):
-                            self.name = name
-                            self.img = PIL.Image.open(uf).convert('RGB')
-                    files_to_process = [RawImg(uf.name, uf) for uf in uploaded_files]
-                # --- TẠO THƯ MỤC VÀ LƯU ẢNH TRƯỚC ĐỂ BACKUP ---
-                sess_dir = os.path.join(mh_hist_dir, final_sess_name)
-                sess_img_dir = os.path.join(sess_dir, 'images')
-                os.makedirs(sess_img_dir, exist_ok=True)
-                
-                for fo in files_to_process:
-                    save_path = os.path.join(sess_img_dir, fo.name)
-                    if not os.path.exists(save_path):
-                        fo.img.save(save_path, quality=90)
-                
-                glossary = load_file(PATHS['glossary'])
-                notes = load_file(PATHS['notes'])
-                
-                status = st.status(f"🚀 Đang xử lý {len(files_to_process)} ảnh/dải...", expanded=True)
-                bar = st.progress(0)
-                
-                all_results = []
-                t0 = time.time()
-                consecutive_errors = 0
-                
-                for i, file_obj in enumerate(files_to_process):
-                    fname = file_obj.name
-                    bar.progress(i / len(files_to_process), f"Đang quét ảnh {i+1}/{len(files_to_process)}...")
-                    status.write(f"🖼️ Đang quét ảnh: `{fname}`")
-                    
-                    try:
-                        img = file_obj.img
-                        # Tối ưu kích thước và dung lượng ảnh trước khi gửi
-                        optimized_img = optimize_image_for_api(img)
-                        
-                        sys_m = (
-                            "You are an expert Manhwa/Webtoon translator and typesetter assistant. "
-                            "You extract Korean text strictly from speech bubbles or important narrative boxes and translate it into natural, flowing Vietnamese. "
-                            "Ignore small background SFX (Sound Effects) unless they are crucial to the plot. "
-                            "CRITICAL RULE: If a single speech bubble contains multiple lines of text, you MUST join them into a SINGLE line separated by a space in both the KR and VI output. Do NOT preserve line breaks within the same dialogue box.\n"
-                            "Format your output cleanly and exactly like this:\n"
-                            "**[Khung thoại]**\n"
-                            "KR: <Korean text in a SINGLE line>\n"
-                            "VI: <Vietnamese translation in a SINGLE line>\n\n"
-                            "Rules: Follow the provided glossary. Ensure pronouns match the Korean nuances and glossary rules."
-                        )
-                        
-                        prompt = f"--- GLOSSARY ---\n{glossary}\n\n--- NOTES ---\n{notes}\n\n--- TASK ---\nExtract dialogues from this image and translate them to Vietnamese. Keep them in reading order (top to bottom, right to left generally)."
-                        
-                        contents = [optimized_img, prompt]
-                        res = generate_with_retry(target_model, contents, sys_m, status)
-                        
-                        if res and res.strip():
-                            all_results.append(f"### 📄 ẢNH: {fname}\n\n{res}\n")
-                            consecutive_errors = 0
-                            status.write(f"   ✅ Xong `{fname}`")
-                            # Incremental progress save
-                            save_file(os.path.join(sess_dir, "script.txt"), "\n\n".join(all_results))
-                            time.sleep(15) 
-                        else:
-                            consecutive_errors += 1
-                            all_results.append(f"### 📄 ẢNH: {fname}\n\n[LỖI HOẶC HẾT TOKEN]\n")
-                            status.write(f"   ⚠️ Thất bại `{fname}`")
-                            save_file(os.path.join(sess_dir, "script.txt"), "\n\n".join(all_results))
-                            
-                            if consecutive_errors >= 2:
-                                status.error("🚨 Quá trình dịch liên tục thất bại do Rate Limit hoặc lỗi API! Dừng sớm để bảo toàn dữ liệu.")
-                                break
-                    except Exception as e:
-                        consecutive_errors += 1
-                        all_results.append(f"### 📄 ẢNH: {fname}\n\n[LỖI HỆ THỐNG: {e}]\n")
-                        status.write(f"   ❌ Lỗi `{fname}`: {e}")
-                        save_file(os.path.join(sess_dir, "script.txt"), "\n\n".join(all_results))
-                        
-                        if consecutive_errors >= 2:
-                            status.error("🚨 Quá trình dịch liên tục thất bại do lỗi phần mềm! Dừng sớm để bảo toàn dữ liệu.")
-                            break
-                        
-                bar.progress(1.0, "✅ Hoàn tất tiến trình hiện tại!")
-                status.update(label=f"✅ Kết thúc quá trình quét (Save Backup) trong {time.time()-t0:.0f}s", state="complete")
-                
-                st.balloons()
-                st.session_state['current_mh_sess'] = final_sess_name
-                if 'mh_new_sess_def' in st.session_state: del st.session_state['mh_new_sess_def']
-                st.rerun()
-            
-        elif sess_choice != "+ TẠO PHIÊN BẢN MỚI":
-            # Mode: View and Edit existing history
-            sess_dir = os.path.join(mh_hist_dir, sess_choice)
-            sess_script_path = os.path.join(sess_dir, "script.txt")
-            sess_img_dir = os.path.join(sess_dir, "images")
-            
-            mh_content = load_file(sess_script_path)
-            
-            # Helper: Parse master script into a dict of {filename: content}
-            import re
-            parts = re.split(r'### 📄 ẢNH: (.*?)\n', mh_content)
-            parsed_data = {}
-            if len(parts) > 1:
-                for i in range(1, len(parts), 2):
-                    fname = parts[i].strip()
-                    text = parts[i+1].strip() if i+1 < len(parts) else ""
-                    parsed_data[fname] = text
-            
-            st.markdown(f"#### 📑 Biên tập Chapter: {sess_choice}")
-            
-            if os.path.exists(sess_img_dir):
-                saved_imgs = sorted(os.listdir(sess_img_dir))
-                if saved_imgs:
-                    st.divider()
-                    
-                    # Individual image-text rows
-                    new_parsed_data = {}
-                    for img_name in saved_imgs:
-                        st.markdown(f"🖼️ **{img_name}**")
-                        c1, c2 = st.columns([1, 1])
-                        with c1:
-                            st.image(os.path.join(sess_img_dir, img_name), use_container_width=True)
-                        with c2:
-                            st.markdown('<div class="sticky-anchor"></div>', unsafe_allow_html=True)
-                            current_val = parsed_data.get(img_name, "")
-                            st.markdown('<style>textarea[aria-label="Bản dịch:"] { font-size: 26px !important; line-height: 1.5 !important; }</style>', unsafe_allow_html=True)
-                            input_val = st.text_area("Bản dịch:", current_val, height=500, key=f"mh_edit_{sess_choice}_{img_name}")
-                            new_parsed_data[img_name] = input_val
-                        st.divider()
-
-                    # Reconstruct script for saving/downloading
-                    reconstructed_script = "\n\n".join([f"### 📄 ẢNH: {n}\n\n{new_parsed_data.get(n, '')}\n" for n in saved_imgs])
-
-                    # Bottom Actions
-                    col_save, col_dl = st.columns([1, 1])
-                    with col_dl:
-                         st.download_button("⬇️ Tải Kịch bản (.txt)", reconstructed_script, 
-                                           f"{sess_choice}.txt", use_container_width=True)
-                    with col_save:
-                        if st.button("💾 Lưu tất cả thay đổi", type="primary", use_container_width=True, key="mh_save_all"):
-                            save_file(sess_script_path, reconstructed_script)
-                            st.success("✅ Đã lưu toàn bộ bản dịch!")
-                            st.rerun()
-                else:
-                    st.info("Chưa có ảnh gốc nào được lưu lại cho Lịch sử này.")
-            else:
-                st.error("Không tìm thấy thư mục ảnh cho phiên bản này.")
-
-# =================== TAB 6: TẢI TRUYỆN ===================
-with tabs[6]:
-    st.markdown("#### 📥 Tải ảnh truyện tranh hàng loạt")
-    st.caption("Công cụ này sử dụng `gallery-dl` để tự động cào ảnh gốc từ các trang truyện (Naver, Kakao, Webtoons...) về rồi nén thành file ZIP cho bạn.")
-    
-    dl_url = st.text_input("🔗 Nhập Link Truyện (URL):", placeholder="https://comic.naver.com/webtoon/detail?titleId=...")
-    stitch_images = st.checkbox("🧩 Tự động nối các dải ảnh bị cắt đứt (Stitching)", value=True, help="Ghép nối liền mạch các ảnh bị cắt ngắn (VD: Webtoon) thành 1 dải ảnh dài. Giới hạn 15,000px cấu hình mỗi file ảnh để tránh quá khổ cho AI và trình xem.")
-    
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        submit_dl = st.button("🚀 Bắt đầu Tải & Nén", type="primary", use_container_width=True)
-        
-    if submit_dl:
-        if not dl_url.strip():
-            st.error("❌ Link không được bỏ trống!")
-        else:
-            log_action("Tải Truyện", f"URL: {dl_url[:40]}...")
-            import tempfile, subprocess
-            
-            with st.spinner("⏳ Đang cào ảnh từ Web... Xin vui lòng đợi, quá trình này có thể mất vài phút! (Không F5 hay đóng trang)"):
-                tmp_dir = tempfile.mkdtemp()
-                zip_path = os.path.join(tempfile.gettempdir(), f"manhwa_{int(time.time())}")
-                try:
-                    # Execute gallery-dl module
-                    res = subprocess.run([sys.executable, "-m", "gallery_dl", "--directory", tmp_dir, dl_url], capture_output=True, text=True)
-                    
-                    # Optional stitching logic
-                    if stitch_images:
-                        import PIL.Image
-                        for root, dirs, files in os.walk(tmp_dir):
-                            img_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))]
-                            if not img_files:
-                                continue
-                            
-                            # Sort properly using natural sorting + Windows Duplicate handling
-                            img_files.sort(key=get_windows_sort_key)
-                            
-                            images = []
-                            for f in img_files:
-                                try:
-                                    img = PIL.Image.open(os.path.join(root, f))
-                                    if img.mode != 'RGB':
-                                        img = img.convert('RGB')
-                                    images.append((f, img))
-                                except Exception:
-                                    pass
-                            
-                            if not images:
-                                continue
-                            
-                            stitched_chunks = []
-                            current_chunk = []
-                            current_h = 0
-                            current_w = 0
-                            MAX_HEIGHT = 15000
-                            
-                            for f, img in images:
-                                if current_h + img.height > MAX_HEIGHT and current_chunk:
-                                    stitched_chunks.append((current_chunk, current_w, current_h))
-                                    current_chunk = [(f, img)]
-                                    current_h = img.height
-                                    current_w = img.width
-                                else:
-                                    current_chunk.append((f, img))
-                                    current_h += img.height
-                                    current_w = max(current_w, img.width)
-                                    
-                            if current_chunk:
-                                stitched_chunks.append((current_chunk, current_w, current_h))
-                                
-                            # Create new images and delete old ones
-                            for i, (chunk, w, h) in enumerate(stitched_chunks):
-                                canvas = PIL.Image.new('RGB', (w, h), (255, 255, 255))
-                                y_offset = 0
-                                for f, img in chunk:
-                                    x_offset = (w - img.width) // 2  # Center align
-                                    canvas.paste(img, (x_offset, y_offset))
-                                    y_offset += img.height
-                                
-                                save_path = os.path.join(root, f"stitched_{i+1:03d}.jpg")
-                                canvas.save(save_path, 'JPEG', quality=90)
-                                
-                            for f, img in images:
-                                img.close()
-                                try:
-                                    os.remove(os.path.join(root, f))
-                                except Exception:
-                                    pass
-
-                    # Count downloaded/stitched images
-                    total_files = 0
-                    for root, dirs, files in os.walk(tmp_dir):
-                        total_files += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))])
-                        
-                    if total_files > 0:
-                        st.success(f"✅ Đã tải về thành công **{total_files}** ảnh. Đang nén thành Zip...")
-                        
-                        # Zip the directory
-                        shutil.make_archive(zip_path, 'zip', tmp_dir)
-                        
-                        with open(f"{zip_path}.zip", "rb") as f:
-                            zip_data = f.read()
-                            
-                        mb_size = f"{len(zip_data) / (1024 * 1024):.2f}"
-                        st.download_button(
-                            label=f"⬇️ TẢI FILE ZIP ({mb_size} MB)",
-                            data=zip_data,
-                            file_name=f"truyen_{int(time.time())}.zip",
-                            mime="application/zip",
-                            type="primary",
-                            use_container_width=True
-                        )
-                    else:
-                        st.error("❌ Không tải được ảnh nào. Có thể trang web này không được hỗ trợ hoặc cần đăng nhập (Trả phí).")
-                        if res.stderr or res.stdout:
-                            with st.expander("Xem bảng log hệ thống"):
-                                st.code(res.stderr + "\n" + res.stdout)
-                                
-                except Exception as e:
-                    st.error(f"❌ Có lỗi hệ thống bất ngờ xảy ra: {e}")
-                finally:
-                    # Cleanup generated files from server disk
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
-                    try:
-                        os.remove(f"{zip_path}.zip")
-                    except Exception:
-                        pass
-
-# =================== TAB 7: EDIT QT (CONVERT -> VI) ===================
-with tabs[7]:
     if not client:
         st.warning("⚠️ Cấu hình API Key trước.")
     else:
@@ -1789,8 +1559,8 @@ with tabs[7]:
             st.text_area("Bản dịch mượt", st.session_state['edit_qt_result'], height=400, key=f"edit_qt_out_{eqt_ver}")
             st.download_button("⬇️ Tải bản dịch", st.session_state['edit_qt_result'], f"vi_edit_{int(time.time())}.txt")
 
-# =================== TAB 8: GLOSSARY ===================
-with tabs[8]:
+# =================== TAB 6: GLOSSARY ===================
+with tabs[6]:
     st.markdown("#### 📚 Quản lý Glossary")
 
     g_tab1, g_tab2, g_tab3 = st.tabs(["📖 Glossary", "📝 Personal Notes", "🔄 Đồng bộ"])
